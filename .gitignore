@@ -1,0 +1,9 @@
+node_modules/
+dist/
+out/
+coverage/
+.vite/
+.worktrees/
+*.log
+.DS_Store
+Thumbs.db

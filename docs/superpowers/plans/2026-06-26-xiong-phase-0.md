@@ -33,17 +33,17 @@
 - Create: `.prettierrc.json`
 - Create: `eslint.config.mjs`
 
-- [ ] **Step 1: Add root workspace manifests**
+- [x] **Step 1: Add root workspace manifests**
 
 Create root scripts for `dev`, `build`, `typecheck`, `test`, `lint`, and `format:check`, using pnpm recursive execution.
 
-- [ ] **Step 2: Install locked dependencies**
+- [x] **Step 2: Install locked dependencies**
 
 Run: `pnpm install`
 
 Expected: `pnpm-lock.yaml` is created and install exits successfully.
 
-- [ ] **Step 3: Verify workspace discovery**
+- [x] **Step 3: Verify workspace discovery**
 
 Run: `pnpm -r list --depth -1`
 
@@ -58,7 +58,7 @@ Expected: desktop, core, and db packages are listed.
 - Create: `packages/core/src/app-info.ts`
 - Create: `packages/core/src/index.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from 'vitest';
@@ -74,13 +74,13 @@ describe('createAppInfo', () => {
 });
 ```
 
-- [ ] **Step 2: Run test and verify RED**
+- [x] **Step 2: Run test and verify RED**
 
 Run: `pnpm --filter @xiong/core test`
 
 Expected: FAIL because `./app-info` does not exist.
 
-- [ ] **Step 3: Add minimal implementation**
+- [x] **Step 3: Add minimal implementation**
 
 ```ts
 export function createAppInfo(version: string) {
@@ -88,7 +88,7 @@ export function createAppInfo(version: string) {
 }
 ```
 
-- [ ] **Step 4: Run test and verify GREEN**
+- [x] **Step 4: Run test and verify GREEN**
 
 Run: `pnpm --filter @xiong/core test`
 
@@ -108,23 +108,23 @@ Expected: one passing test.
 - Create: `apps/desktop/src/renderer/src/App.tsx`
 - Create: `apps/desktop/src/renderer/src/styles.css`
 
-- [ ] **Step 1: Configure Electron build entry points**
+- [x] **Step 1: Configure Electron build entry points**
 
 Use electron-vite with separate main, preload, and renderer entries.
 
-- [ ] **Step 2: Implement the secure main window**
+- [x] **Step 2: Implement the secure main window**
 
 Set `nodeIntegration: false`, `contextIsolation: true`, and `sandbox: true`. Deny new windows, block unexpected navigation, and install a production CSP.
 
-- [ ] **Step 3: Expose the minimal preload API**
+- [x] **Step 3: Expose the minimal preload API**
 
 Expose only `window.xiong.app.getVersion()`.
 
-- [ ] **Step 4: Render the Xiong welcome screen**
+- [x] **Step 4: Render the Xiong welcome screen**
 
 Render the project name, Phase 0 status, and runtime version without adding feature UI.
 
-- [ ] **Step 5: Verify desktop compilation**
+- [x] **Step 5: Verify desktop compilation**
 
 Run: `pnpm --filter @xiong/desktop typecheck`
 
@@ -137,11 +137,11 @@ Expected: exit code 0.
 - Create: `packages/db/tsconfig.json`
 - Create: `packages/db/src/index.ts`
 
-- [ ] **Step 1: Add an intentionally empty public package**
+- [x] **Step 1: Add an intentionally empty public package**
 
 Export a `DatabasePackageStatus` type only. Do not add SQLite or Drizzle until Phase 1 has behavior tests.
 
-- [ ] **Step 2: Verify package compilation**
+- [x] **Step 2: Verify package compilation**
 
 Run: `pnpm --filter @xiong/db typecheck`
 
@@ -153,19 +153,19 @@ Expected: exit code 0.
 - Create: `.github/workflows/ci.yml`
 - Modify: `README.md`
 
-- [ ] **Step 1: Add Linux quality checks**
+- [x] **Step 1: Add Linux quality checks**
 
 Run install, typecheck, lint, tests, and build on Ubuntu.
 
-- [ ] **Step 2: Add Windows build validation**
+- [x] **Step 2: Add Windows build validation**
 
 Run install and desktop build on Windows to catch Electron platform issues.
 
-- [ ] **Step 3: Add operational README**
+- [x] **Step 3: Add operational README**
 
 Document prerequisites and exact commands for install, development, tests, and build.
 
-- [ ] **Step 4: Run full verification**
+- [x] **Step 4: Run full verification**
 
 Run:
 
@@ -178,7 +178,7 @@ pnpm build
 
 Expected: every command exits with code 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add .

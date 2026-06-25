@@ -1,0 +1,98 @@
+import { app, BrowserWindow, ipcMain, session } from 'electron';
+import { join } from 'node:path';
+
+const productionCsp = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "connect-src 'self'",
+  "font-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'none'",
+].join('; ');
+
+function installContentSecurityPolicy(): void {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [productionCsp],
+      },
+    });
+  });
+}
+
+function createWindow(): void {
+  const window = new BrowserWindow({
+    width: 1180,
+    height: 760,
+    minWidth: 900,
+    minHeight: 600,
+    show: false,
+    title: 'Xiong',
+    backgroundColor: '#101419',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (event, url) => {
+    const developmentUrl = process.env.ELECTRON_RENDERER_URL;
+    if (developmentUrl) {
+      const expectedOrigin = new URL(developmentUrl).origin;
+      if (new URL(url).origin === expectedOrigin) {
+        return;
+      }
+    }
+
+    if (url.startsWith('file://')) {
+      return;
+    }
+
+    event.preventDefault();
+  });
+
+  window.once('ready-to-show', () => {
+    window.show();
+  });
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    void window.loadURL(process.env.ELECTRON_RENDERER_URL);
+  } else {
+    void window.loadFile(join(__dirname, '../renderer/index.html'));
+  }
+}
+
+void app.whenReady().then(() => {
+  ipcMain.handle('app:get-version', (event) => {
+    if (event.senderFrame !== event.sender.mainFrame) {
+      throw new Error('Rejected app:get-version from an untrusted frame.');
+    }
+
+    return app.getVersion();
+  });
+
+  if (app.isPackaged) {
+    installContentSecurityPolicy();
+  }
+
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});

@@ -1,0 +1,5 @@
+DEVELOPMENT_REVISED.md
+docs/superpowers/
+pnpm-lock.yaml
+apps/desktop/out/
+apps/desktop/dist/

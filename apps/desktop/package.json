@@ -16,8 +16,10 @@
   },
   "dependencies": {
     "@xiong/core": "workspace:*",
+    "@xiong/db": "workspace:*",
     "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "react-dom": "19.2.7",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/react": "19.2.17",

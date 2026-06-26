@@ -12,12 +12,14 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "package:win": "pnpm build && electron-builder --win --dir"
+    "package:win": "corepack pnpm build && electron-builder --win --dir && node ../../scripts/rebuild-better-sqlite3-node.cjs"
   },
   "dependencies": {
     "@xiong/core": "workspace:*",
+    "@xiong/db": "workspace:*",
     "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "react-dom": "19.2.7",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/react": "19.2.17",

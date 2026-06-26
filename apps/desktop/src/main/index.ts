@@ -1,5 +1,7 @@
+import { createLibraryRepository, createXiongDatabase, type XiongDatabase } from '@xiong/db';
 import { app, BrowserWindow, ipcMain, session } from 'electron';
 import { join } from 'node:path';
+import { registerLibraryIpc } from './library-ipc';
 
 const productionCsp = [
   "default-src 'self'",
@@ -23,6 +25,8 @@ function installContentSecurityPolicy(): void {
     });
   });
 }
+
+let database: XiongDatabase | undefined;
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -70,6 +74,9 @@ function createWindow(): void {
 }
 
 void app.whenReady().then(() => {
+  database = createXiongDatabase(join(app.getPath('userData'), 'xiong.sqlite'));
+  registerLibraryIpc(ipcMain, createLibraryRepository(database));
+
   ipcMain.handle('app:get-version', (event) => {
     if (event.senderFrame !== event.sender.mainFrame) {
       throw new Error('Rejected app:get-version from an untrusted frame.');
@@ -95,4 +102,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('will-quit', () => {
+  database?.close();
 });

@@ -12,7 +12,7 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "package:win": "corepack pnpm build && electron-builder --win --dir"
+    "package:win": "corepack pnpm build && electron-builder --win --dir && node ../../scripts/rebuild-better-sqlite3-node.cjs"
   },
   "dependencies": {
     "@xiong/core": "workspace:*",

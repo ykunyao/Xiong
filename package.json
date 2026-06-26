@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
+    "rebuild:native:node": "node scripts/rebuild-better-sqlite3-node.cjs",
     "package:win": "corepack pnpm --filter @xiong/desktop package:win"
   },
   "devDependencies": {

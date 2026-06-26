@@ -1,4 +1,9 @@
-import type { AddMessageInput, CreateCharacterInput, CreateConversationInput, LibraryRepository } from '@xiong/db';
+import type {
+  AddMessageInput,
+  CreateCharacterInput,
+  CreateConversationInput,
+  LibraryRepository,
+} from '@xiong/db';
 import { z } from 'zod';
 
 interface TrustedFrameEvent {

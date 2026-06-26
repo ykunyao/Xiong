@@ -36,22 +36,15 @@ export function App(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    if (!selectedCharacterId) {
-      setConversations([]);
-      setSelectedConversationId('');
-      return;
+    if (selectedCharacterId) {
+      void refreshConversations(selectedCharacterId);
     }
-
-    void refreshConversations(selectedCharacterId);
   }, [selectedCharacterId]);
 
   useEffect(() => {
-    if (!selectedConversationId) {
-      setMessages([]);
-      return;
+    if (selectedConversationId) {
+      void refreshMessages(selectedConversationId);
     }
-
-    void refreshMessages(selectedConversationId);
   }, [selectedConversationId]);
 
   async function refreshCharacters(selectId?: string): Promise<void> {
@@ -63,7 +56,9 @@ export function App(): React.JSX.Element {
   async function refreshConversations(characterId: string, selectId?: string): Promise<void> {
     const nextConversations = await window.xiong.library.listConversations(characterId);
     setConversations(nextConversations);
-    setSelectedConversationId((currentId) => selectId ?? currentId ?? nextConversations[0]?.id ?? '');
+    setSelectedConversationId(
+      (currentId) => selectId ?? currentId ?? nextConversations[0]?.id ?? '',
+    );
   }
 
   async function refreshMessages(conversationId: string): Promise<void> {
@@ -76,6 +71,9 @@ export function App(): React.JSX.Element {
     try {
       const character = await window.xiong.library.createCharacter(characterForm);
       setCharacterForm(emptyCharacterForm);
+      setConversations([]);
+      setMessages([]);
+      setSelectedConversationId('');
       await refreshCharacters(character.id);
       setStatus(`已创建角色：${character.name}`);
     } catch (error) {
@@ -96,6 +94,7 @@ export function App(): React.JSX.Element {
         title: conversationTitle,
       });
       setConversationTitle('');
+      setMessages([]);
       await refreshConversations(selectedCharacterId, conversation.id);
       setStatus(`已创建对话：${conversation.title}`);
     } catch (error) {
@@ -141,7 +140,9 @@ export function App(): React.JSX.Element {
               名称
               <input
                 value={characterForm.name}
-                onChange={(event) => setCharacterForm({ ...characterForm, name: event.target.value })}
+                onChange={(event) =>
+                  setCharacterForm({ ...characterForm, name: event.target.value })
+                }
                 placeholder="遥"
               />
             </label>
@@ -149,7 +150,9 @@ export function App(): React.JSX.Element {
               描述
               <textarea
                 value={characterForm.description}
-                onChange={(event) => setCharacterForm({ ...characterForm, description: event.target.value })}
+                onChange={(event) =>
+                  setCharacterForm({ ...characterForm, description: event.target.value })
+                }
                 placeholder="这个角色是谁？"
               />
             </label>
@@ -157,7 +160,9 @@ export function App(): React.JSX.Element {
               First Message
               <textarea
                 value={characterForm.firstMessage}
-                onChange={(event) => setCharacterForm({ ...characterForm, firstMessage: event.target.value })}
+                onChange={(event) =>
+                  setCharacterForm({ ...characterForm, firstMessage: event.target.value })
+                }
                 placeholder="你终于来了。"
               />
             </label>
@@ -169,8 +174,15 @@ export function App(): React.JSX.Element {
             records={characters}
             selectedId={selectedCharacterId}
             getTitle={(character) => character.name}
-            getSubtitle={(character) => character.description || character.firstMessage || '暂无描述'}
-            onSelect={setSelectedCharacterId}
+            getSubtitle={(character) =>
+              character.description || character.firstMessage || '暂无描述'
+            }
+            onSelect={(id) => {
+              setSelectedCharacterId(id);
+              setSelectedConversationId('');
+              setConversations([]);
+              setMessages([]);
+            }}
           />
         </Panel>
 
@@ -199,13 +211,18 @@ export function App(): React.JSX.Element {
             selectedId={selectedConversationId}
             getTitle={(conversation) => conversation.title}
             getSubtitle={(conversation) => new Date(conversation.createdAt).toLocaleString()}
-            onSelect={setSelectedConversationId}
+            onSelect={(id) => {
+              setSelectedConversationId(id);
+              setMessages([]);
+            }}
           />
         </Panel>
 
         <Panel
           title="消息"
-          hint={selectedConversation ? `当前对话：${selectedConversation.title}` : '先选择一个对话。'}
+          hint={
+            selectedConversation ? `当前对话：${selectedConversation.title}` : '先选择一个对话。'
+          }
         >
           <div className="messages" aria-live="polite">
             {messages.length === 0 ? (

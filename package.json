@@ -4,14 +4,14 @@
   "private": true,
   "packageManager": "pnpm@10.28.2",
   "scripts": {
-    "dev": "pnpm --filter @xiong/desktop dev",
-    "build": "pnpm -r --if-present build",
-    "typecheck": "pnpm -r --if-present typecheck",
-    "test": "pnpm -r --if-present test",
+    "dev": "corepack pnpm --filter @xiong/desktop dev",
+    "build": "corepack pnpm -r --if-present build",
+    "typecheck": "corepack pnpm -r --if-present typecheck",
+    "test": "corepack pnpm -r --if-present test",
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
-    "package:win": "pnpm --filter @xiong/desktop package:win"
+    "package:win": "corepack pnpm --filter @xiong/desktop package:win"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

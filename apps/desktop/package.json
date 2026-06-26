@@ -12,7 +12,7 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "package:win": "pnpm build && electron-builder --win --dir"
+    "package:win": "corepack pnpm build && electron-builder --win --dir"
   },
   "dependencies": {
     "@xiong/core": "workspace:*",

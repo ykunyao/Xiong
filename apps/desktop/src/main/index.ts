@@ -1,6 +1,9 @@
+import { createMockChatProvider } from '@xiong/core';
 import { createLibraryRepository, createXiongDatabase, type XiongDatabase } from '@xiong/db';
 import { app, BrowserWindow, ipcMain, session } from 'electron';
 import { join } from 'node:path';
+import { registerChatIpc } from './chat-ipc';
+import { createChatService } from './chat-service';
 import { registerLibraryIpc } from './library-ipc';
 
 const productionCsp = [
@@ -75,7 +78,9 @@ function createWindow(): void {
 
 void app.whenReady().then(() => {
   database = createXiongDatabase(join(app.getPath('userData'), 'xiong.sqlite'));
-  registerLibraryIpc(ipcMain, createLibraryRepository(database));
+  const repository = createLibraryRepository(database);
+  registerLibraryIpc(ipcMain, repository);
+  registerChatIpc(ipcMain, createChatService(repository, createMockChatProvider()));
 
   ipcMain.handle('app:get-version', (event) => {
     if (event.senderFrame !== event.sender.mainFrame) {

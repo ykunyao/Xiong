@@ -8,6 +8,7 @@ import type {
   CreateConversationInput,
   MessageRecord,
 } from '@xiong/db';
+import type { ChatStreamEvent, SendChatMessageInput } from '../../shared/chat';
 
 declare global {
   interface Window {
@@ -22,6 +23,12 @@ declare global {
         createConversation(input: CreateConversationInput): Promise<ConversationRecord>;
         listMessages(conversationId: string): Promise<MessageRecord[]>;
         addMessage(input: AddMessageInput): Promise<MessageRecord>;
+      };
+      chat: {
+        sendMessage(
+          input: SendChatMessageInput,
+          onEvent: (event: ChatStreamEvent) => void,
+        ): Promise<void>;
       };
     };
   }

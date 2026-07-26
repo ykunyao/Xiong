@@ -1,4 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import { createChatClient } from './chat-client';
+
+const chatClient = createChatClient({
+  on: (channel, listener) => {
+    ipcRenderer.on(channel, listener);
+  },
+  removeListener: (channel, listener) => {
+    ipcRenderer.removeListener(channel, listener);
+  },
+  invoke: async (channel, request) => ipcRenderer.invoke(channel, request),
+});
 
 const xiongApi = Object.freeze({
   app: Object.freeze({
@@ -16,6 +27,7 @@ const xiongApi = Object.freeze({
       ipcRenderer.invoke('library:list-messages', conversationId),
     addMessage: async (input: unknown) => ipcRenderer.invoke('library:add-message', input),
   }),
+  chat: Object.freeze(chatClient),
 });
 
 contextBridge.exposeInMainWorld('xiong', xiongApi);

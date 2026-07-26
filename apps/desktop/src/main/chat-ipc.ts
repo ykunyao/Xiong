@@ -1,0 +1,75 @@
+import { z } from 'zod';
+import type { ChatSendRequest, ChatStreamEvent } from '../shared/chat';
+import { ChatServiceError, type ChatService } from './chat-service';
+
+interface ChatIpcEvent {
+  senderFrame: unknown;
+  sender: {
+    mainFrame: unknown;
+    send(channel: string, payload: ChatStreamEvent): void;
+  };
+}
+
+interface ChatIpcRegistrar {
+  handle(channel: string, listener: (event: ChatIpcEvent, input?: unknown) => unknown): void;
+}
+
+const textField = z.string().trim();
+const chatSendRequestSchema = z.object({
+  requestId: textField.min(1, 'Request id is required'),
+  conversationId: textField.min(1, 'Conversation id is required'),
+  content: textField.min(1, 'Message content is required'),
+});
+
+export function parseChatSendRequest(input: unknown): ChatSendRequest {
+  const result = chatSendRequestSchema.safeParse(input);
+  if (result.success) {
+    return result.data;
+  }
+
+  throw new Error(result.error.issues[0]?.message ?? 'Invalid chat request');
+}
+
+export function registerChatIpc(ipcMain: ChatIpcRegistrar, service: ChatService): void {
+  ipcMain.handle('chat:send-message', async (event, input) => {
+    assertTrustedFrame(event);
+    const request = parseChatSendRequest(input);
+
+    try {
+      await service.send(request, (progress) => {
+        const streamEvent: ChatStreamEvent = { requestId: request.requestId, ...progress };
+        event.sender.send('chat:stream-event', streamEvent);
+      });
+    } catch (error) {
+      event.sender.send('chat:stream-event', {
+        type: 'error',
+        requestId: request.requestId,
+        conversationId: request.conversationId,
+        message: getUserFacingError(error),
+      });
+    }
+  });
+}
+
+function assertTrustedFrame(event: ChatIpcEvent): void {
+  if (event.senderFrame !== event.sender.mainFrame) {
+    throw new Error('Rejected chat IPC call from an untrusted frame');
+  }
+}
+
+function getUserFacingError(error: unknown): string {
+  if (!(error instanceof ChatServiceError)) {
+    return '回复生成失败，请重试。';
+  }
+
+  switch (error.code) {
+    case 'generation-active':
+      return '当前对话正在生成回复，请稍候。';
+    case 'conversation-not-found':
+      return '找不到当前对话。';
+    case 'character-not-found':
+      return '找不到当前角色。';
+    case 'empty-response':
+      return '没有生成回复，请重试。';
+  }
+}

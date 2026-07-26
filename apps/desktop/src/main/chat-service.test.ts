@@ -1,4 +1,4 @@
-import type { ChatProvider } from '@xiong/core';
+import { ChatProviderTimeoutError, type ChatProvider } from '@xiong/core';
 import type {
   CharacterRecord,
   ConversationRecord,
@@ -8,6 +8,7 @@ import type {
 import { describe, expect, test } from 'vitest';
 import type { ChatProgressEvent } from '../shared/chat';
 import { createChatService } from './chat-service';
+import { createOpenAICompatibleChatProvider } from './openai-compatible-chat-provider';
 
 const character: CharacterRecord = {
   id: 'character-1',
@@ -136,6 +137,10 @@ describe('chat service', () => {
     await sendPromise;
 
     expect(receivedSignal?.aborted).toBe(true);
+    expect(receivedSignal?.reason).toMatchObject({
+      name: 'AbortError',
+      code: 'user-cancelled',
+    });
     expect(messages.map(({ role, content }) => ({ role, content }))).toEqual([
       { role: 'user', content: '你好' },
     ]);
@@ -175,6 +180,117 @@ describe('chat service', () => {
 
     expect(messages).toHaveLength(0);
     expect(events.map((event) => event.type)).toEqual(['cancelled']);
+  });
+
+  test('reports a timeout distinctly and never persists a partial assistant reply', async () => {
+    const { repository, messages } = createFakeRepository();
+    const events: ChatProgressEvent[] = [];
+    const provider: ChatProvider = {
+      async *stream() {
+        yield 'partial';
+        throw new ChatProviderTimeoutError('The provider request timed out');
+      },
+    };
+    const service = createChatService(repository, createResolver(provider));
+
+    await expect(
+      service.send({ conversationId: conversation.id, content: '你好' }, (event) =>
+        events.push(event),
+      ),
+    ).rejects.toMatchObject({ code: 'request-timeout' });
+
+    expect(messages.map(({ role, content }) => ({ role, content }))).toEqual([
+      { role: 'user', content: '你好' },
+    ]);
+    expect(events.map((event) => event.type)).toEqual(['user-message', 'delta']);
+    expect(service.cancel(conversation.id)).toBe(false);
+  });
+
+  test('keeps only the user when a partial AI SDK SSE stream times out via onAbort', async () => {
+    const { repository, messages } = createFakeRepository();
+    const events: ChatProgressEvent[] = [];
+    const provider = createOpenAICompatibleChatProvider(
+      {
+        baseUrl: 'https://provider.example/v1',
+        model: 'roleplay-model',
+        temperature: 1,
+        maxOutputTokens: 2048,
+        requestTimeoutMs: 50,
+      },
+      {
+        fetch: async (_input, init) => createPausingOpenAIStreamResponse(init?.signal, '部分回复'),
+      },
+    );
+    const service = createChatService(repository, createResolver(provider));
+
+    await expect(
+      service.send({ conversationId: conversation.id, content: '你好' }, (event) =>
+        events.push(event),
+      ),
+    ).rejects.toMatchObject({ code: 'request-timeout' });
+
+    expect(messages.map(({ role, content }) => ({ role, content }))).toEqual([
+      { role: 'user', content: '你好' },
+    ]);
+    expect(events.map((event) => event.type)).toEqual(['user-message', 'delta']);
+    expect(events[1]).toMatchObject({ type: 'delta', delta: '部分回复' });
+  });
+
+  test('keeps a timeout classification when a late manual cancel races with cleanup', async () => {
+    const { repository, messages } = createFakeRepository();
+    const timeoutWon = createDeferred<void>();
+    const releaseTimeout = createDeferred<void>();
+    const events: ChatProgressEvent[] = [];
+    const provider: ChatProvider = {
+      async *stream() {
+        yield 'partial';
+        timeoutWon.resolve();
+        await releaseTimeout.promise;
+        throw new ChatProviderTimeoutError('The timeout already won');
+      },
+    };
+    const service = createChatService(repository, createResolver(provider));
+    const sendPromise = service.send(
+      { conversationId: conversation.id, content: '你好' },
+      (event) => events.push(event),
+    );
+    await timeoutWon.promise;
+
+    expect(service.cancel(conversation.id)).toBe(true);
+    releaseTimeout.resolve();
+
+    await expect(sendPromise).rejects.toMatchObject({ code: 'request-timeout' });
+    expect(messages.map((message) => message.role)).toEqual(['user']);
+    expect(events.map((event) => event.type)).toEqual(['user-message', 'delta']);
+    expect(service.cancel(conversation.id)).toBe(false);
+  });
+
+  test('cleans up a timed-out generation so the next send can complete', async () => {
+    const { repository, messages } = createFakeRepository();
+    let callCount = 0;
+    const provider: ChatProvider = {
+      async *stream() {
+        callCount += 1;
+        if (callCount === 1) {
+          throw new ChatProviderTimeoutError('Timed out');
+        }
+        yield '第二次完成';
+      },
+    };
+    const service = createChatService(repository, createResolver(provider));
+
+    await expect(
+      service.send({ conversationId: conversation.id, content: '第一次' }, () => undefined),
+    ).rejects.toMatchObject({ code: 'request-timeout' });
+    await expect(
+      service.send({ conversationId: conversation.id, content: '第二次' }, () => undefined),
+    ).resolves.toBeUndefined();
+
+    expect(messages.map(({ role, content }) => ({ role, content }))).toEqual([
+      { role: 'user', content: '第一次' },
+      { role: 'user', content: '第二次' },
+      { role: 'assistant', content: '第二次完成' },
+    ]);
   });
 
   test('rejects a missing conversation before persisting a user message', async () => {
@@ -328,4 +444,50 @@ function createDeferred<T>(): Deferred<T> {
     promise,
     resolve: (value) => resolvePromise?.(value),
   };
+}
+
+function createPausingOpenAIStreamResponse(
+  signal: AbortSignal | null | undefined,
+  content: string,
+): Response {
+  const encoder = new TextEncoder();
+  let removeAbortListener: () => void = () => undefined;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      let closed = false;
+      const close = () => {
+        if (closed) {
+          return;
+        }
+
+        closed = true;
+        removeAbortListener();
+        controller.close();
+      };
+      const event = JSON.stringify({
+        id: 'chatcmpl-service-timeout-test',
+        object: 'chat.completion.chunk',
+        created: 1,
+        model: 'roleplay-model',
+        choices: [{ index: 0, delta: { content }, finish_reason: null }],
+      });
+
+      controller.enqueue(encoder.encode(`data: ${event}\n\n`));
+      if (signal?.aborted) {
+        close();
+        return;
+      }
+
+      signal?.addEventListener('abort', close, { once: true });
+      removeAbortListener = () => signal?.removeEventListener('abort', close);
+    },
+    cancel() {
+      removeAbortListener();
+    },
+  });
+
+  return new Response(body, {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+  });
 }

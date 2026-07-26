@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { XiongDatabase } from './database';
 import { providerConfigs, providerSecrets, type ProviderConfigRecord } from './schema';
 
@@ -11,7 +11,14 @@ export interface SaveOpenAICompatibleConfigInput {
   baseUrl: string;
   defaultModel: string;
   encryptedApiKey?: string | null;
+  params?: Record<string, unknown>;
   activate: boolean;
+}
+
+export interface RotateEncryptedSecretIfUnchangedInput {
+  apiKeyRef: string;
+  expectedEncryptedValue: string;
+  encryptedValue: string;
 }
 
 export interface ProviderConfigRepository {
@@ -19,6 +26,7 @@ export interface ProviderConfigRepository {
   getOpenAICompatibleConfig(): ProviderConfigRecord | undefined;
   getEncryptedSecret(id: string): string | undefined;
   saveOpenAICompatibleConfig(input: SaveOpenAICompatibleConfigInput): ProviderConfigRecord;
+  rotateEncryptedSecretIfUnchanged(input: RotateEncryptedSecretIfUnchangedInput): boolean;
   setActiveProvider(type: ActiveProviderType): void;
 }
 
@@ -97,7 +105,7 @@ export function createProviderConfigRepository(database: XiongDatabase): Provide
             baseUrl: input.baseUrl,
             apiKeyRef,
             defaultModel: input.defaultModel,
-            params: {},
+            params: input.params ?? existing?.params ?? {},
             isActive: input.activate,
             createdAt: existing?.createdAt ?? now,
             updatedAt: now,
@@ -108,6 +116,7 @@ export function createProviderConfigRepository(database: XiongDatabase): Provide
               baseUrl: input.baseUrl,
               apiKeyRef,
               defaultModel: input.defaultModel,
+              ...(input.params === undefined ? {} : { params: input.params }),
               isActive: input.activate,
               updatedAt: now,
             },
@@ -123,6 +132,30 @@ export function createProviderConfigRepository(database: XiongDatabase): Provide
           .from(providerConfigs)
           .where(eq(providerConfigs.id, defaultOpenAICompatibleProviderId))
           .get()!;
+      }),
+
+    rotateEncryptedSecretIfUnchanged: (input) =>
+      database.db.transaction((transaction) => {
+        const currentConfig = transaction
+          .select({ apiKeyRef: providerConfigs.apiKeyRef })
+          .from(providerConfigs)
+          .where(eq(providerConfigs.id, defaultOpenAICompatibleProviderId))
+          .get();
+        if (currentConfig?.apiKeyRef !== input.apiKeyRef) {
+          return false;
+        }
+
+        const result = transaction
+          .update(providerSecrets)
+          .set({ encryptedValue: input.encryptedValue, updatedAt: Date.now() })
+          .where(
+            and(
+              eq(providerSecrets.id, input.apiKeyRef),
+              eq(providerSecrets.encryptedValue, input.expectedEncryptedValue),
+            ),
+          )
+          .run();
+        return result.changes === 1;
       }),
 
     setActiveProvider: (type) => {

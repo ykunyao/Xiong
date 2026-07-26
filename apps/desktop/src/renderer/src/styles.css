@@ -220,6 +220,13 @@ label {
   font-weight: 650;
 }
 
+.field-hint {
+  color: #718697;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
 input,
 textarea,
 select {

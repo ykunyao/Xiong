@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import type { SaveProviderSettingsInput } from '../shared/provider-settings';
+import {
+  defaultOpenAICompatibleGenerationParams,
+  openAICompatibleGenerationParamLimits,
+  type SaveProviderSettingsInput,
+} from '../shared/provider-settings';
 import { ProviderSettingsError, type ProviderSettingsService } from './provider-settings-service';
 
 interface ProviderSettingsIpcEvent {
@@ -16,6 +20,38 @@ interface ProviderSettingsIpcRegistrar {
   ): void;
 }
 
+const temperatureSchema = z
+  .number()
+  .refine(
+    (value) =>
+      Number.isFinite(value) &&
+      value >= openAICompatibleGenerationParamLimits.temperature.min &&
+      value <= openAICompatibleGenerationParamLimits.temperature.max,
+    'Temperature must be between 0 and 2',
+  )
+  .default(defaultOpenAICompatibleGenerationParams.temperature);
+const maxOutputTokensSchema = z
+  .number()
+  .refine(
+    (value) =>
+      Number.isInteger(value) &&
+      value >= openAICompatibleGenerationParamLimits.maxOutputTokens.min &&
+      value <= openAICompatibleGenerationParamLimits.maxOutputTokens.max,
+    'Maximum output tokens must be an integer between 1 and 32768',
+  )
+  .default(defaultOpenAICompatibleGenerationParams.maxOutputTokens);
+const requestTimeoutMsSchema = z
+  .number()
+  .refine(
+    (value) =>
+      Number.isInteger(value) &&
+      value >= openAICompatibleGenerationParamLimits.requestTimeoutMs.min &&
+      value <= openAICompatibleGenerationParamLimits.requestTimeoutMs.max &&
+      value % 1_000 === 0,
+    'Request timeout must be whole seconds between 1 and 600',
+  )
+  .default(defaultOpenAICompatibleGenerationParams.requestTimeoutMs);
+
 const saveProviderSettingsSchema = z
   .object({
     activeProvider: z.enum(['mock', 'openai-compatible']),
@@ -23,6 +59,9 @@ const saveProviderSettingsSchema = z
     model: z.string().trim().max(256, 'Model id is too long'),
     apiKey: z.string().trim().max(4096, 'API key is too long').optional(),
     clearApiKey: z.boolean().optional().default(false),
+    temperature: temperatureSchema,
+    maxOutputTokens: maxOutputTokensSchema,
+    requestTimeoutMs: requestTimeoutMsSchema,
   })
   .superRefine((input, context) => {
     if (input.activeProvider === 'openai-compatible' && !input.baseUrl) {
@@ -56,6 +95,9 @@ export function parseSaveProviderSettingsInput(input: unknown): SaveProviderSett
       baseUrl: result.data.baseUrl,
       model: result.data.model,
       clearApiKey: result.data.clearApiKey,
+      temperature: result.data.temperature,
+      maxOutputTokens: result.data.maxOutputTokens,
+      requestTimeoutMs: result.data.requestTimeoutMs,
       ...(result.data.apiKey === undefined ? {} : { apiKey: result.data.apiKey }),
     };
   }
@@ -103,6 +145,12 @@ function getUserFacingError(error: unknown): string {
       return 'Provider 地址无效。远程地址必须使用 HTTPS，本地回环地址可以使用 HTTP。';
     case 'model-required':
       return '请输入模型 ID。';
+    case 'temperature-out-of-range':
+      return '温度必须在 0 到 2 之间。';
+    case 'max-output-tokens-out-of-range':
+      return '最大输出 Token 必须是 1 到 32768 之间的整数。';
+    case 'request-timeout-out-of-range':
+      return '请求超时必须是 1 到 600 之间的整数秒。';
     case 'secret-storage-unavailable':
       return '系统安全存储不可用，无法保存 API Key。';
     case 'secret-storage-insecure':

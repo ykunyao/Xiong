@@ -104,6 +104,8 @@ function getUserFacingError(error: unknown): string {
       return '找不到当前对话。';
     case 'character-not-found':
       return '找不到当前角色。';
+    case 'request-timeout':
+      return '模型服务请求超时，未保存未完成的回复，请重试。';
     case 'empty-response':
       return '没有生成回复，请重试。';
   }

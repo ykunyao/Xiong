@@ -8,6 +8,7 @@ import type {
   MessageRecord,
 } from '@xiong/db';
 import type { ChatStreamEvent, SendChatMessageInput } from '../shared/chat';
+import type { ProviderSettingsView, SaveProviderSettingsInput } from '../shared/provider-settings';
 
 declare global {
   interface Window {
@@ -21,6 +22,10 @@ declare global {
         listConversations(characterId: string): Promise<ConversationRecord[]>;
         createConversation(input: CreateConversationInput): Promise<ConversationRecord>;
         listMessages(conversationId: string): Promise<MessageRecord[]>;
+      };
+      providers: {
+        getSettings(): Promise<ProviderSettingsView>;
+        saveSettings(input: SaveProviderSettingsInput): Promise<ProviderSettingsView>;
       };
       chat: {
         sendMessage(

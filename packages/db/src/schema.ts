@@ -32,7 +32,31 @@ export const messages = sqliteTable('messages', {
   updatedAt: integer('updated_at').notNull(),
 });
 
+export const providerSecrets = sqliteTable('provider_secrets', {
+  id: text('id').primaryKey(),
+  encryptedValue: text('encrypted_value').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+export const providerConfigs = sqliteTable('provider_configs', {
+  id: text('id').primaryKey(),
+  type: text('type', { enum: ['openai-compatible'] }).notNull(),
+  name: text('name').notNull(),
+  baseUrl: text('base_url'),
+  apiKeyRef: text('api_key_ref').references(() => providerSecrets.id, {
+    onDelete: 'set null',
+  }),
+  defaultModel: text('default_model'),
+  params: text('params_json', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(false),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
 export type CharacterRecord = typeof characters.$inferSelect;
 export type ConversationRecord = typeof conversations.$inferSelect;
 export type MessageRecord = typeof messages.$inferSelect;
 export type MessageRole = MessageRecord['role'];
+export type ProviderConfigRecord = typeof providerConfigs.$inferSelect;
+export type ProviderSecretRecord = typeof providerSecrets.$inferSelect;

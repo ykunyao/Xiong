@@ -1,6 +1,13 @@
+export type ChatProviderMessageRole = 'system' | 'user' | 'assistant';
+
+export interface ChatProviderMessage {
+  role: ChatProviderMessageRole;
+  content: string;
+}
+
 export interface ChatProviderRequest {
   characterName: string;
-  userText: string;
+  messages: ChatProviderMessage[];
 }
 
 export interface ChatProvider {
@@ -29,9 +36,8 @@ export function createMockChatProvider(options: MockChatProviderOptions = {}): C
 
   return {
     async *stream(request) {
-      const response = Array.from(
-        `${request.characterName}：我收到了你的消息：“${request.userText}”`,
-      );
+      const userText = findLatestUserText(request.messages);
+      const response = Array.from(`${request.characterName}：我收到了你的消息：“${userText}”`);
 
       for (let index = 0; index < response.length; index += chunkSize) {
         if (index > 0 && delayMs > 0) {
@@ -42,6 +48,17 @@ export function createMockChatProvider(options: MockChatProviderOptions = {}): C
       }
     },
   };
+}
+
+function findLatestUserText(messages: ChatProviderMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === 'user') {
+      return message.content;
+    }
+  }
+
+  throw new Error('Chat provider request must include a user message');
 }
 
 async function sleep(delayMs: number): Promise<void> {

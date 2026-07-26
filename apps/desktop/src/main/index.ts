@@ -1,11 +1,20 @@
 import { createMockChatProvider } from '@xiong/core';
-import { createLibraryRepository, createXiongDatabase, type XiongDatabase } from '@xiong/db';
-import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
+import {
+  createLibraryRepository,
+  createProviderConfigRepository,
+  createXiongDatabase,
+  type XiongDatabase,
+} from '@xiong/db';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, session } from 'electron';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerChatIpc } from './chat-ipc';
 import { createChatService } from './chat-service';
 import { registerLibraryIpc } from './library-ipc';
+import { createOpenAICompatibleChatProvider } from './openai-compatible-chat-provider';
+import { registerProviderSettingsIpc } from './provider-settings-ipc';
+import { createProviderSettingsService } from './provider-settings-service';
+import { createSafeStorageSecretCodec } from './safe-storage-secret-codec';
 
 const mainDirectory = dirname(fileURLToPath(import.meta.url));
 
@@ -99,8 +108,15 @@ async function startApplication(): Promise<void> {
 
   database = createXiongDatabase(join(app.getPath('userData'), 'xiong.sqlite'));
   const repository = createLibraryRepository(database);
+  const providerSettingsService = createProviderSettingsService({
+    repository: createProviderConfigRepository(database),
+    secretCodec: createSafeStorageSecretCodec(safeStorage),
+    mockProvider: createMockChatProvider(),
+    createOpenAICompatibleProvider: createOpenAICompatibleChatProvider,
+  });
   registerLibraryIpc(ipcMain, repository);
-  registerChatIpc(ipcMain, createChatService(repository, createMockChatProvider()));
+  registerProviderSettingsIpc(ipcMain, providerSettingsService);
+  registerChatIpc(ipcMain, createChatService(repository, providerSettingsService));
 
   ipcMain.handle('app:get-version', (event) => {
     if (event.senderFrame !== event.sender.mainFrame) {

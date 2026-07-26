@@ -12,9 +12,9 @@ import { createChatService } from './chat-service';
 const character: CharacterRecord = {
   id: 'character-1',
   name: '遥',
-  description: '',
-  personality: '',
-  scenario: '',
+  description: '温柔的旅伴。',
+  personality: '有点嘴硬。',
+  scenario: '夜晚的旅店。',
   firstMessage: '',
   createdAt: 1,
   updatedAt: 1,
@@ -34,14 +34,29 @@ describe('chat service', () => {
     const events: ChatProgressEvent[] = [];
     const provider: ChatProvider = {
       async *stream(request) {
-        expect(request).toEqual({ characterName: '遥', userText: '你好' });
+        expect(request).toEqual({
+          characterName: '遥',
+          messages: [
+            {
+              role: 'system',
+              content: [
+                '你正在扮演角色“遥”。',
+                '角色描述：温柔的旅伴。',
+                '性格：有点嘴硬。',
+                '场景：夜晚的旅店。',
+                '始终以该角色身份回复用户。',
+              ].join('\n'),
+            },
+            { role: 'user', content: '你好' },
+          ],
+        });
         expect(messages.map((message) => message.role)).toEqual(['user']);
         yield '遥：';
         yield '你好。';
       },
     };
 
-    await createChatService(repository, provider).send(
+    await createChatService(repository, createResolver(provider)).send(
       { conversationId: conversation.id, content: '你好' },
       (event) => events.push(event),
     );
@@ -79,7 +94,7 @@ describe('chat service', () => {
     };
 
     await expect(
-      createChatService(repository, provider).send(
+      createChatService(repository, createResolver(provider)).send(
         { conversationId: conversation.id, content: '你好' },
         (event) => events.push(event),
       ),
@@ -99,7 +114,7 @@ describe('chat service', () => {
     };
 
     await expect(
-      createChatService(repository, provider).send(
+      createChatService(repository, createResolver(provider)).send(
         { conversationId: conversation.id, content: '你好' },
         () => undefined,
       ),
@@ -118,7 +133,7 @@ describe('chat service', () => {
         yield '完成';
       },
     };
-    const service = createChatService(repository, provider);
+    const service = createChatService(repository, createResolver(provider));
 
     const firstSend = service.send(
       { conversationId: conversation.id, content: '第一条' },
@@ -134,17 +149,63 @@ describe('chat service', () => {
     releaseStream.resolve();
     await firstSend;
   });
+
+  test('resolves the provider before persisting a user message', async () => {
+    const { repository, messages } = createFakeRepository();
+    const service = createChatService(repository, {
+      resolveChatProvider: async () => {
+        throw new Error('provider is not configured');
+      },
+    });
+
+    await expect(
+      service.send({ conversationId: conversation.id, content: '你好' }, () => undefined),
+    ).rejects.toThrow('provider is not configured');
+    expect(messages).toHaveLength(0);
+  });
+
+  test('passes ordered persisted history including the latest user message', async () => {
+    const { repository } = createFakeRepository({
+      initialMessages: [
+        { role: 'user', content: '第一条' },
+        { role: 'assistant', content: '第一条回复' },
+      ],
+    });
+    const provider: ChatProvider = {
+      async *stream(request) {
+        expect(request.messages.slice(1)).toEqual([
+          { role: 'user', content: '第一条' },
+          { role: 'assistant', content: '第一条回复' },
+          { role: 'user', content: '第二条' },
+        ]);
+        yield '第二条回复';
+      },
+    };
+
+    await createChatService(repository, createResolver(provider)).send(
+      { conversationId: conversation.id, content: '第二条' },
+      () => undefined,
+    );
+  });
 });
 
 interface FakeRepositoryOptions {
   includeConversation?: boolean;
+  initialMessages?: Array<Pick<MessageRecord, 'role' | 'content'>>;
 }
 
 function createFakeRepository(options: FakeRepositoryOptions = {}): {
   repository: LibraryRepository;
   messages: MessageRecord[];
 } {
-  const messages: MessageRecord[] = [];
+  const messages: MessageRecord[] = (options.initialMessages ?? []).map((message, index) => ({
+    id: `message-${index + 1}`,
+    conversationId: conversation.id,
+    role: message.role,
+    content: message.content,
+    createdAt: index + 1,
+    updatedAt: index + 1,
+  }));
   const includeConversation = options.includeConversation ?? true;
 
   return {
@@ -171,6 +232,12 @@ function createFakeRepository(options: FakeRepositoryOptions = {}): {
         return message;
       },
     },
+  };
+}
+
+function createResolver(provider: ChatProvider) {
+  return {
+    resolveChatProvider: async () => provider,
   };
 }
 

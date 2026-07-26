@@ -2,8 +2,8 @@
 
 > **项目名称**：Xiong  
 > **文档版本**：v1.2  
-> **最后更新**：2026-06-26  
-> **状态**：MVP 优先架构设计阶段  
+> **最后更新**：2026-07-26
+> **状态**：MVP 实现中（Phase 3 Provider 基础能力已完成）
 > **基于版本**：v1.0 DEVELOPMENT.md  
 
 ---
@@ -1410,29 +1410,31 @@ P2 再考虑：
 
 ## 19. 开发路线图
 
+当前实施进度：桌面壳、SQLite 基础数据层、角色/对话创建、Mock 流式聊天以及 OpenAI Compatible Provider 基础能力已经可用。Phase 3 尚缺停止生成、模型参数和完整超时/取消语义；角色卡导入、Prompt Engine、世界书等后续能力仍按下列路线推进。
+
 ### Phase 0：项目初始化
 
 目标：搭建能跑起来的工程骨架。
 
 任务：
 
-- [ ] 初始化 pnpm workspace；
-- [ ] 配置 TypeScript strict；
-- [ ] 配置 ESLint / Prettier；
-- [ ] 配置 Electron + Vite；
+- [x] 初始化 pnpm workspace；
+- [x] 配置 TypeScript strict；
+- [x] 配置 ESLint / Prettier；
+- [x] 配置 Electron + Vite；
 - [ ] 配置 React + TailwindCSS；
 - [ ] 配置 shadcn/ui；
-- [ ] 配置 Vitest；
-- [ ] 配置 Zod、AI SDK 和 Markdown sanitize；
-- [ ] 配置 GitHub Actions 基础 CI；
+- [x] 配置 Vitest；
+- [x] 配置 Zod、AI SDK 和 Markdown sanitize；
+- [x] 配置 GitHub Actions 基础 CI；
 - [ ] 创建 ADR 目录。
 
 验收：
 
-- [ ] `pnpm dev` 能启动桌面窗口；
-- [ ] `pnpm typecheck` 通过；
-- [ ] `pnpm test` 通过；
-- [ ] CI 能跑通。
+- [x] `pnpm dev` 能启动桌面窗口；
+- [x] `pnpm typecheck` 通过；
+- [x] `pnpm test` 通过；
+- [x] CI 能跑通。
 
 ### Phase 1：数据层和基础 UI
 
@@ -1440,23 +1442,23 @@ P2 再考虑：
 
 任务：
 
-- [ ] 设计 Drizzle schema；
+- [x] 设计 Drizzle schema；
 - [ ] 实现迁移；
-- [ ] 实现用例导向数据访问；
-- [ ] 配置 foreign keys、WAL 和事务；
+- [x] 实现用例导向数据访问；
+- [x] 配置 foreign keys、WAL 和事务；
 - [ ] 实现迁移前备份与失败恢复；
-- [ ] 实现角色列表；
+- [x] 实现角色列表；
 - [ ] 实现角色编辑；
-- [ ] 实现对话列表；
-- [ ] 实现消息列表 UI；
-- [ ] 实现设置页骨架。
+- [x] 实现对话列表；
+- [x] 实现消息列表 UI；
+- [x] 实现设置页骨架。
 
 验收：
 
-- [ ] 重启应用数据不丢；
-- [ ] 能创建角色；
-- [ ] 能创建对话；
-- [ ] 能添加本地消息。
+- [x] 重启应用数据不丢；
+- [x] 能创建角色；
+- [x] 能创建对话；
+- [x] 能添加本地消息。
 
 ### Phase 2：角色卡导入
 
@@ -1483,22 +1485,22 @@ P2 再考虑：
 
 任务：
 
-- [ ] 使用 AI SDK 实现 OpenAI Compatible Adapter；
+- [x] 使用 AI SDK 实现 OpenAI Compatible Adapter；
 - [ ] 实现 SDK 事件到领域 StreamEvent 的转换；
-- [ ] 实现 Mock Provider；
-- [ ] 实现 API Key 安全存储；
+- [x] 实现 Mock Provider；
+- [x] 实现 API Key 安全存储；
 - [ ] 实现模型和参数设置；
-- [ ] 实现流式渲染；
+- [x] 实现流式渲染；
 - [ ] 实现停止生成；
 - [ ] 实现超时、取消和错误语义测试；
 
 验收：
 
-- [ ] 能配置自定义 baseUrl；
-- [ ] 能选择模型；
-- [ ] 能流式输出；
+- [x] 能配置自定义 baseUrl；
+- [x] 能选择模型；
+- [x] 能流式输出；
 - [ ] 停止生成能生效；
-- [ ] 错误能显示给用户。
+- [x] 错误能显示给用户。
 
 ### Phase 4：Prompt Engine
 

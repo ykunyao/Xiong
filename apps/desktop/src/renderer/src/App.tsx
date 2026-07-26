@@ -1,6 +1,13 @@
 import type { CharacterRecord, ConversationRecord, MessageRecord } from '@xiong/db';
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import Markdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
+import type {
+  ActiveProvider,
+  ProviderSettingsView,
+  SecretStorageStatus,
+} from '../../shared/provider-settings';
 import {
   appendMessageIfMissing,
   chatActivityReducer,
@@ -13,6 +20,22 @@ const emptyCharacterForm = {
   firstMessage: '',
 };
 
+interface ProviderFormState {
+  activeProvider: ActiveProvider;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  clearApiKey: boolean;
+}
+
+const initialProviderForm: ProviderFormState = {
+  activeProvider: 'mock',
+  baseUrl: 'https://api.openai.com/v1',
+  model: '',
+  apiKey: '',
+  clearApiKey: false,
+};
+
 export function App(): React.JSX.Element {
   const [version, setVersion] = useState('0.1.0');
   const [characters, setCharacters] = useState<CharacterRecord[]>([]);
@@ -23,6 +46,9 @@ export function App(): React.JSX.Element {
   const [characterForm, setCharacterForm] = useState(emptyCharacterForm);
   const [conversationTitle, setConversationTitle] = useState('');
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
+  const [providerSettings, setProviderSettings] = useState<ProviderSettingsView | null>(null);
+  const [providerForm, setProviderForm] = useState<ProviderFormState>(initialProviderForm);
+  const [providerSaving, setProviderSaving] = useState(false);
   const [chatActivity, dispatchChatActivity] = useReducer(
     chatActivityReducer,
     initialChatActivityState,
@@ -42,10 +68,16 @@ export function App(): React.JSX.Element {
   const messageDraft = messageDrafts[selectedConversationId] ?? '';
   const streamingReply = chatActivity.streamingReplies[selectedConversationId] ?? '';
   const isGenerating = chatActivity.generatingConversationIds.includes(selectedConversationId);
+  const isOpenAICompatible = providerForm.activeProvider === 'openai-compatible';
+  const activeProviderLabel =
+    providerSettings?.activeProvider === 'openai-compatible'
+      ? providerSettings.openAICompatible.model || 'OpenAI Compatible'
+      : 'Mock';
 
   useEffect(() => {
     void window.xiong.app.getVersion().then(setVersion);
     void refreshCharacters();
+    void refreshProviderSettings();
   }, []);
 
   useEffect(() => {
@@ -93,6 +125,55 @@ export function App(): React.JSX.Element {
     const nextMessages = await window.xiong.library.listMessages(conversationId);
     if (selectedConversationIdRef.current === conversationId) {
       setMessages(nextMessages);
+    }
+  }
+
+  async function refreshProviderSettings(): Promise<void> {
+    try {
+      const nextSettings = await window.xiong.providers.getSettings();
+      setProviderSettings(nextSettings);
+      setProviderForm({
+        activeProvider: nextSettings.activeProvider,
+        baseUrl: nextSettings.openAICompatible.baseUrl,
+        model: nextSettings.openAICompatible.model,
+        apiKey: '',
+        clearApiKey: false,
+      });
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    }
+  }
+
+  async function saveProviderSettings(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setProviderSaving(true);
+
+    try {
+      const apiKey = providerForm.apiKey.trim();
+      const nextSettings = await window.xiong.providers.saveSettings({
+        activeProvider: providerForm.activeProvider,
+        baseUrl: providerForm.baseUrl,
+        model: providerForm.model,
+        ...(apiKey ? { apiKey } : {}),
+        ...(providerForm.clearApiKey ? { clearApiKey: true } : {}),
+      });
+      setProviderSettings(nextSettings);
+      setProviderForm({
+        activeProvider: nextSettings.activeProvider,
+        baseUrl: nextSettings.openAICompatible.baseUrl,
+        model: nextSettings.openAICompatible.model,
+        apiKey: '',
+        clearApiKey: false,
+      });
+      setStatus(
+        nextSettings.activeProvider === 'mock'
+          ? '已切换到本地 Mock Provider。'
+          : `已启用模型：${nextSettings.openAICompatible.model}`,
+      );
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setProviderSaving(false);
     }
   }
 
@@ -173,7 +254,7 @@ export function App(): React.JSX.Element {
           if (selectedConversationIdRef.current === conversationId) {
             setMessages((current) => appendMessageIfMissing(current, streamEvent.message));
           }
-          setStatus('消息已保存，正在生成模拟回复…');
+          setStatus('消息已保存，正在生成回复…');
           return;
         }
 
@@ -181,7 +262,7 @@ export function App(): React.JSX.Element {
           if (selectedConversationIdRef.current === conversationId) {
             setMessages((current) => appendMessageIfMissing(current, streamEvent.message));
           }
-          setStatus('模拟回复已生成并保存。');
+          setStatus('回复已生成并保存。');
           return;
         }
 
@@ -215,14 +296,129 @@ export function App(): React.JSX.Element {
   }
 
   return (
-    <main className="shell" aria-label="Xiong Mock Chat Loop">
+    <main className="shell" aria-label="Xiong Chat">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Phase 2 · Mock Chat Loop</p>
+          <p className="eyebrow">Phase 3 · Provider Integration</p>
           <h1>Xiong</h1>
         </div>
         <p className="version">v{version}</p>
       </header>
+
+      <section className="provider-settings" aria-labelledby="provider-settings-title">
+        <form onSubmit={(event) => void saveProviderSettings(event)}>
+          <header className="provider-settings-header">
+            <div>
+              <p className="eyebrow">Model Provider</p>
+              <h2 id="provider-settings-title">模型服务</h2>
+              <p>默认使用本地 Mock，也可以接入兼容 OpenAI Chat Completions 的服务。</p>
+            </div>
+            <span className="provider-badge">当前：{activeProviderLabel}</span>
+          </header>
+
+          <div className="provider-grid">
+            <label>
+              使用方式
+              <select
+                value={providerForm.activeProvider}
+                onChange={(event) =>
+                  setProviderForm((current) => ({
+                    ...current,
+                    activeProvider: event.target.value as ActiveProvider,
+                  }))
+                }
+                disabled={providerSaving || isGenerating}
+              >
+                <option value="mock">本地 Mock（无需配置）</option>
+                <option value="openai-compatible">OpenAI Compatible</option>
+              </select>
+            </label>
+
+            <label>
+              服务地址
+              <input
+                type="url"
+                value={providerForm.baseUrl}
+                onChange={(event) =>
+                  setProviderForm((current) => ({ ...current, baseUrl: event.target.value }))
+                }
+                placeholder="https://api.openai.com/v1"
+                disabled={!isOpenAICompatible || providerSaving || isGenerating}
+                required={isOpenAICompatible}
+              />
+            </label>
+
+            <label>
+              模型 ID
+              <input
+                value={providerForm.model}
+                onChange={(event) =>
+                  setProviderForm((current) => ({ ...current, model: event.target.value }))
+                }
+                placeholder="gpt-4.1-mini"
+                disabled={!isOpenAICompatible || providerSaving || isGenerating}
+                required={isOpenAICompatible}
+              />
+            </label>
+
+            <label>
+              API Key
+              <input
+                type="password"
+                value={providerForm.apiKey}
+                onChange={(event) =>
+                  setProviderForm((current) => ({
+                    ...current,
+                    apiKey: event.target.value,
+                    clearApiKey: false,
+                  }))
+                }
+                placeholder={
+                  providerSettings?.openAICompatible.hasApiKey
+                    ? '已安全保存；留空会继续使用'
+                    : '可选，取决于服务要求'
+                }
+                autoComplete="off"
+                disabled={
+                  !isOpenAICompatible ||
+                  providerSaving ||
+                  isGenerating ||
+                  providerSettings?.secretStorageStatus !== 'available'
+                }
+              />
+            </label>
+          </div>
+
+          <div className="provider-footer">
+            <div className="provider-notes">
+              <p>{getSecretStorageDescription(providerSettings?.secretStorageStatus)}</p>
+              {isOpenAICompatible && (
+                <p>发送消息时，角色设定和当前对话历史会传给你填写的第三方服务地址。</p>
+              )}
+              {isOpenAICompatible && providerSettings?.openAICompatible.hasApiKey && (
+                <label className="inline-control">
+                  <input
+                    type="checkbox"
+                    checked={providerForm.clearApiKey}
+                    onChange={(event) =>
+                      setProviderForm((current) => ({
+                        ...current,
+                        apiKey: '',
+                        clearApiKey: event.target.checked,
+                      }))
+                    }
+                    disabled={providerSaving || isGenerating}
+                  />
+                  清除已保存的 API Key
+                </label>
+              )}
+            </div>
+            <button type="submit" disabled={providerSaving || isGenerating}>
+              {providerSaving ? '保存中…' : '保存设置'}
+            </button>
+          </div>
+        </form>
+      </section>
 
       <section className="workspace">
         <Panel title="角色" hint="创建本地角色，稍后会接入角色卡导入。">
@@ -314,7 +510,9 @@ export function App(): React.JSX.Element {
         <Panel
           title="消息"
           hint={
-            selectedConversation ? `当前对话：${selectedConversation.title}` : '先选择一个对话。'
+            selectedConversation
+              ? `当前对话：${selectedConversation.title} · Provider：${activeProviderLabel}`
+              : '先选择一个对话。'
           }
         >
           <div className="messages" aria-live="polite">
@@ -323,18 +521,18 @@ export function App(): React.JSX.Element {
               : messages.map((message) => (
                   <article className={`message ${message.role}`} key={message.id}>
                     <strong>{message.role}</strong>
-                    <p>{message.content}</p>
+                    <MessageContent content={message.content} />
                   </article>
                 ))}
             {streamingReply && (
-              <article className="message assistant streaming" aria-label="正在生成的模拟回复">
+              <article className="message assistant streaming" aria-label="正在生成回复">
                 <strong>assistant · streaming</strong>
-                <p>
-                  {streamingReply}
+                <div className="message-content">
+                  <Markdown rehypePlugins={[rehypeSanitize]}>{streamingReply}</Markdown>
                   <span className="streaming-cursor" aria-hidden="true">
                     ▍
                   </span>
-                </p>
+                </div>
               </article>
             )}
           </div>
@@ -348,7 +546,7 @@ export function App(): React.JSX.Element {
                   [selectedConversationId]: event.target.value,
                 }))
               }
-              placeholder="输入消息，Mock Provider 会流式回复。"
+              placeholder="输入消息，回复会流式显示。"
               disabled={!selectedConversation || isGenerating}
             />
             <button
@@ -365,6 +563,14 @@ export function App(): React.JSX.Element {
         {status}
       </p>
     </main>
+  );
+}
+
+function MessageContent({ content }: { content: string }): React.JSX.Element {
+  return (
+    <div className="message-content">
+      <Markdown rehypePlugins={[rehypeSanitize]}>{content}</Markdown>
+    </div>
   );
 }
 
@@ -430,4 +636,17 @@ function RecordList<TRecord extends RecordWithId>({
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '操作失败，请稍后重试。';
+}
+
+function getSecretStorageDescription(status: SecretStorageStatus | undefined): string {
+  switch (status) {
+    case 'available':
+      return 'API Key 会使用系统安全存储加密，页面不会回显已保存的 Key。';
+    case 'insecure':
+      return '当前系统密钥后端不安全，因此不会保存 API Key；仍可连接无需 Key 的本地服务。';
+    case 'unavailable':
+      return '系统安全存储不可用，因此不会保存 API Key；仍可连接无需 Key 的本地服务。';
+    default:
+      return '正在检查系统安全存储…';
+  }
 }

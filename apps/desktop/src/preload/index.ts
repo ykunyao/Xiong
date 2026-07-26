@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { ProviderSettingsView, SaveProviderSettingsInput } from '../shared/provider-settings';
 import { createChatClient } from './chat-client';
 
 const chatClient = createChatClient({
@@ -25,6 +26,12 @@ const xiongApi = Object.freeze({
       ipcRenderer.invoke('library:create-conversation', input),
     listMessages: async (conversationId: string) =>
       ipcRenderer.invoke('library:list-messages', conversationId),
+  }),
+  providers: Object.freeze({
+    getSettings: async (): Promise<ProviderSettingsView> =>
+      ipcRenderer.invoke('provider:get-settings'),
+    saveSettings: async (input: SaveProviderSettingsInput): Promise<ProviderSettingsView> =>
+      ipcRenderer.invoke('provider:save-settings', input),
   }),
   chat: Object.freeze(chatClient),
 });

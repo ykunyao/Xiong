@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 import type { ChatService } from './chat-service';
 import { ChatServiceError } from './chat-service';
 import { parseChatSendRequest, registerChatIpc } from './chat-ipc';
+import { ProviderSettingsError } from './provider-settings-service';
 
 describe('chat ipc', () => {
   test('trims and validates a chat request', () => {
@@ -120,6 +121,29 @@ describe('chat ipc', () => {
       type: 'error',
       conversationId: 'conversation-1',
       message: '回复生成失败，请重试。',
+    });
+  });
+
+  test('maps provider configuration errors to actionable safe messages', async () => {
+    const service: ChatService = {
+      send: async () => {
+        throw new ProviderSettingsError('secret-decryption-failed', 'sensitive decryption details');
+      },
+    };
+    const { handler } = registerTestHandler(service);
+    const { event, send } = createTrustedEvent();
+
+    await handler(event, {
+      requestId: 'request-1',
+      conversationId: 'conversation-1',
+      content: '你好',
+    });
+
+    expect(send).toHaveBeenCalledWith('chat:stream-event', {
+      requestId: 'request-1',
+      type: 'error',
+      conversationId: 'conversation-1',
+      message: '无法读取已保存的 API Key，请重新保存 Provider 设置。',
     });
   });
 });

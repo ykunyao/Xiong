@@ -57,10 +57,34 @@ function createTables(sqlite: Database.Database): void {
       FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS provider_secrets (
+      id TEXT PRIMARY KEY,
+      encrypted_value TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS provider_configs (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL CHECK (type IN ('openai-compatible')),
+      name TEXT NOT NULL,
+      base_url TEXT,
+      api_key_ref TEXT,
+      default_model TEXT,
+      params_json TEXT NOT NULL DEFAULT '{}',
+      is_active INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0, 1)),
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (api_key_ref) REFERENCES provider_secrets(id) ON DELETE SET NULL
+    );
+
     CREATE INDEX IF NOT EXISTS conversations_character_id_idx
       ON conversations(character_id);
 
     CREATE INDEX IF NOT EXISTS messages_conversation_id_created_at_idx
       ON messages(conversation_id, created_at);
+
+    CREATE INDEX IF NOT EXISTS provider_configs_is_active_idx
+      ON provider_configs(is_active);
   `);
 }

@@ -1,4 +1,4 @@
-import type { ChatProvider } from '@xiong/core';
+import type { ChatProvider, ChatProviderMessage } from '@xiong/core';
 import type { LibraryRepository } from '@xiong/db';
 import type { ChatProgressEvent, SendChatMessageInput } from '../shared/chat';
 
@@ -22,9 +22,13 @@ export interface ChatService {
   send(input: SendChatMessageInput, emit: (event: ChatProgressEvent) => void): Promise<void>;
 }
 
+export interface ChatProviderResolver {
+  resolveChatProvider(): Promise<ChatProvider>;
+}
+
 export function createChatService(
   repository: LibraryRepository,
-  provider: ChatProvider,
+  providerResolver: ChatProviderResolver,
 ): ChatService {
   const activeConversations = new Set<string>();
 
@@ -50,6 +54,8 @@ export function createChatService(
           throw new ChatServiceError('character-not-found', 'Character not found');
         }
 
+        const provider = await providerResolver.resolveChatProvider();
+
         const userMessage = repository.addMessage({
           conversationId: conversation.id,
           role: 'user',
@@ -64,7 +70,18 @@ export function createChatService(
         let assistantContent = '';
         for await (const delta of provider.stream({
           characterName: character.name,
-          userText: input.content,
+          messages: [
+            {
+              role: 'system',
+              content: createCharacterSystemPrompt(character),
+            },
+            ...repository.listMessages(conversation.id).flatMap<ChatProviderMessage>((message) => {
+              if (message.role === 'user' || message.role === 'assistant') {
+                return [{ role: message.role, content: message.content }];
+              }
+              return [];
+            }),
+          ],
         })) {
           if (delta.length === 0) {
             continue;
@@ -93,4 +110,24 @@ export function createChatService(
       }
     },
   };
+}
+
+function createCharacterSystemPrompt(character: {
+  name: string;
+  description: string;
+  personality: string;
+  scenario: string;
+}): string {
+  const lines = [`你正在扮演角色“${character.name}”。`];
+  if (character.description.trim()) {
+    lines.push(`角色描述：${character.description.trim()}`);
+  }
+  if (character.personality.trim()) {
+    lines.push(`性格：${character.personality.trim()}`);
+  }
+  if (character.scenario.trim()) {
+    lines.push(`场景：${character.scenario.trim()}`);
+  }
+  lines.push('始终以该角色身份回复用户。');
+  return lines.join('\n');
 }

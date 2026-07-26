@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ChatSendRequest, ChatStreamEvent } from '../shared/chat';
 import { ChatServiceError, type ChatService } from './chat-service';
+import { ProviderSettingsError } from './provider-settings-service';
 
 interface ChatIpcEvent {
   senderFrame: unknown;
@@ -58,6 +59,20 @@ function assertTrustedFrame(event: ChatIpcEvent): void {
 }
 
 function getUserFacingError(error: unknown): string {
+  if (error instanceof ProviderSettingsError) {
+    switch (error.code) {
+      case 'invalid-base-url':
+      case 'model-required':
+      case 'provider-not-configured':
+        return '当前 OpenAI Compatible Provider 配置不完整，请先检查设置。';
+      case 'secret-storage-unavailable':
+      case 'secret-storage-insecure':
+        return '系统安全存储当前不可用，无法读取 Provider API Key。';
+      case 'secret-decryption-failed':
+        return '无法读取已保存的 API Key，请重新保存 Provider 设置。';
+    }
+  }
+
   if (!(error instanceof ChatServiceError)) {
     return '回复生成失败，请重试。';
   }

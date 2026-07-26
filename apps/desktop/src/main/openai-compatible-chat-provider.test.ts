@@ -77,6 +77,39 @@ describe('createOpenAICompatibleChatProvider', () => {
     expect(chunks).toEqual(['本地回复']);
     expect(authorization).toBeNull();
   });
+
+  test('forwards an aborting signal to the AI SDK request', async () => {
+    let requestSignal: AbortSignal | null | undefined;
+    const provider = createOpenAICompatibleChatProvider(
+      {
+        baseUrl: 'https://provider.example/v1',
+        model: 'roleplay-model',
+      },
+      {
+        fetch: async (_input, init) => {
+          requestSignal = init?.signal;
+          return createOpenAIStreamResponse(['完成']);
+        },
+      },
+    );
+    const controller = new AbortController();
+    const chunks: string[] = [];
+
+    for await (const chunk of provider.stream(
+      {
+        characterName: '遥',
+        messages: [{ role: 'user', content: '你好' }],
+      },
+      { signal: controller.signal },
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(['完成']);
+    expect(requestSignal?.aborted).toBe(false);
+    controller.abort();
+    expect(requestSignal?.aborted).toBe(true);
+  });
 });
 
 function createOpenAIStreamResponse(chunks: string[]): Response {

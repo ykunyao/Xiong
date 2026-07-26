@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { ChatService } from './chat-service';
 import { ChatServiceError } from './chat-service';
-import { parseChatSendRequest, registerChatIpc } from './chat-ipc';
+import { parseCancelChatGenerationInput, parseChatSendRequest, registerChatIpc } from './chat-ipc';
 import { ProviderSettingsError } from './provider-settings-service';
 
 describe('chat ipc', () => {
@@ -36,8 +36,18 @@ describe('chat ipc', () => {
     expect(() => parseChatSendRequest(input)).toThrow(message);
   });
 
+  test('trims and validates a cancellation request', () => {
+    expect(parseCancelChatGenerationInput({ conversationId: ' conversation-1 ' })).toEqual({
+      conversationId: 'conversation-1',
+    });
+    expect(() => parseCancelChatGenerationInput({ conversationId: '   ' })).toThrow(
+      'Conversation id is required',
+    );
+  });
+
   test('attaches the request id to progress events from the service', async () => {
     const service: ChatService = {
+      cancel: () => false,
       send: async (input, emit) => {
         emit({ type: 'delta', conversationId: input.conversationId, delta: '遥：' });
       },
@@ -60,7 +70,7 @@ describe('chat ipc', () => {
   });
 
   test('rejects calls from a non-main frame', async () => {
-    const service: ChatService = { send: vi.fn() };
+    const service: ChatService = { cancel: vi.fn(), send: vi.fn() };
     const { handler } = registerTestHandler(service);
     const { event } = createTrustedEvent();
     event.senderFrame = {};
@@ -77,6 +87,7 @@ describe('chat ipc', () => {
 
   test('maps expected service errors to safe user-facing events', async () => {
     const service: ChatService = {
+      cancel: () => false,
       send: async () => {
         throw new ChatServiceError(
           'generation-active',
@@ -103,6 +114,7 @@ describe('chat ipc', () => {
 
   test('does not expose unexpected provider errors to the renderer', async () => {
     const service: ChatService = {
+      cancel: () => false,
       send: async () => {
         throw new Error('secret provider details');
       },
@@ -126,6 +138,7 @@ describe('chat ipc', () => {
 
   test('maps provider configuration errors to actionable safe messages', async () => {
     const service: ChatService = {
+      cancel: () => false,
       send: async () => {
         throw new ProviderSettingsError('secret-decryption-failed', 'sensitive decryption details');
       },
@@ -146,28 +159,43 @@ describe('chat ipc', () => {
       message: '无法读取已保存的 API Key，请重新保存 Provider 设置。',
     });
   });
+
+  test('routes a trusted cancellation request to the chat service', async () => {
+    const cancel = vi.fn(() => true);
+    const service: ChatService = { cancel, send: vi.fn() };
+    const { cancelHandler } = registerTestHandler(service);
+    const { event } = createTrustedEvent();
+
+    expect(cancelHandler(event, { conversationId: ' conversation-1 ' })).toBe(true);
+    expect(cancel).toHaveBeenCalledWith('conversation-1');
+  });
 });
 
 type Registrar = Parameters<typeof registerChatIpc>[0];
 type RegisteredHandler = Parameters<Registrar['handle']>[1];
 type HandlerEvent = Parameters<RegisteredHandler>[0];
 
-function registerTestHandler(service: ChatService): { handler: RegisteredHandler } {
-  let handler: RegisteredHandler | undefined;
+function registerTestHandler(service: ChatService): {
+  handler: RegisteredHandler;
+  cancelHandler: RegisteredHandler;
+} {
+  const handlers = new Map<string, RegisteredHandler>();
   registerChatIpc(
     {
-      handle: (_channel, listener) => {
-        handler = listener;
+      handle: (channel, listener) => {
+        handlers.set(channel, listener);
       },
     },
     service,
   );
 
-  if (!handler) {
-    throw new Error('Chat IPC handler was not registered');
+  const handler = handlers.get('chat:send-message');
+  const cancelHandler = handlers.get('chat:cancel-generation');
+  if (!handler || !cancelHandler) {
+    throw new Error('Chat IPC handlers were not registered');
   }
 
-  return { handler };
+  return { handler, cancelHandler };
 }
 
 function createTrustedEvent(): {

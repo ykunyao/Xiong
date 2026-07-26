@@ -49,6 +49,7 @@ export function App(): React.JSX.Element {
   const [providerSettings, setProviderSettings] = useState<ProviderSettingsView | null>(null);
   const [providerForm, setProviderForm] = useState<ProviderFormState>(initialProviderForm);
   const [providerSaving, setProviderSaving] = useState(false);
+  const [stopRequestedConversationIds, setStopRequestedConversationIds] = useState<string[]>([]);
   const [chatActivity, dispatchChatActivity] = useReducer(
     chatActivityReducer,
     initialChatActivityState,
@@ -68,6 +69,7 @@ export function App(): React.JSX.Element {
   const messageDraft = messageDrafts[selectedConversationId] ?? '';
   const streamingReply = chatActivity.streamingReplies[selectedConversationId] ?? '';
   const isGenerating = chatActivity.generatingConversationIds.includes(selectedConversationId);
+  const isStopping = stopRequestedConversationIds.includes(selectedConversationId);
   const isOpenAICompatible = providerForm.activeProvider === 'openai-compatible';
   const activeProviderLabel =
     providerSettings?.activeProvider === 'openai-compatible'
@@ -266,6 +268,14 @@ export function App(): React.JSX.Element {
           return;
         }
 
+        if (streamEvent.type === 'cancelled') {
+          if (!userMessagePersisted) {
+            restoreDraft(conversationId, content);
+          }
+          setStatus('已停止生成，未保存未完成的回复。');
+          return;
+        }
+
         if (streamEvent.type === 'error') {
           if (!userMessagePersisted) {
             restoreDraft(conversationId, content);
@@ -280,7 +290,37 @@ export function App(): React.JSX.Element {
       setStatus(getErrorMessage(error));
     } finally {
       activeSendConversationIdsRef.current.delete(conversationId);
+      setStopRequestedConversationIds((current) =>
+        current.filter((currentId) => currentId !== conversationId),
+      );
       dispatchChatActivity({ type: 'finish', conversationId });
+    }
+  }
+
+  async function stopGeneration(): Promise<void> {
+    const conversationId = selectedConversationId;
+    if (!conversationId || isStopping) {
+      return;
+    }
+
+    setStopRequestedConversationIds((current) =>
+      current.includes(conversationId) ? current : [...current, conversationId],
+    );
+    setStatus('正在停止生成…');
+
+    try {
+      const accepted = await window.xiong.chat.cancelGeneration(conversationId);
+      if (!accepted) {
+        setStopRequestedConversationIds((current) =>
+          current.filter((currentId) => currentId !== conversationId),
+        );
+        setStatus('当前没有正在生成的回复。');
+      }
+    } catch (error) {
+      setStopRequestedConversationIds((current) =>
+        current.filter((currentId) => currentId !== conversationId),
+      );
+      setStatus(getErrorMessage(error));
     }
   }
 
@@ -549,12 +589,20 @@ export function App(): React.JSX.Element {
               placeholder="输入消息，回复会流式显示。"
               disabled={!selectedConversation || isGenerating}
             />
-            <button
-              type="submit"
-              disabled={!selectedConversation || isGenerating || !messageDraft.trim()}
-            >
-              {isGenerating ? '生成中…' : '发送'}
-            </button>
+            {isGenerating ? (
+              <button
+                className="stop-button"
+                type="button"
+                onClick={() => void stopGeneration()}
+                disabled={isStopping}
+              >
+                {isStopping ? '停止中…' : '停止生成'}
+              </button>
+            ) : (
+              <button type="submit" disabled={!selectedConversation || !messageDraft.trim()}>
+                发送
+              </button>
+            )}
           </form>
         </Panel>
       </section>

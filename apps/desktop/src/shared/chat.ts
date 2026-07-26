@@ -23,7 +23,16 @@ export interface ChatCompleteEvent {
   message: MessageRecord;
 }
 
-export type ChatProgressEvent = UserMessageEvent | ChatDeltaEvent | ChatCompleteEvent;
+export interface ChatCancelledEvent {
+  type: 'cancelled';
+  conversationId: string;
+}
+
+export type ChatProgressEvent =
+  | UserMessageEvent
+  | ChatDeltaEvent
+  | ChatCompleteEvent
+  | ChatCancelledEvent;
 
 export type ChatStreamEvent =
   | (ChatProgressEvent & { requestId: string })
@@ -36,4 +45,8 @@ export type ChatStreamEvent =
 
 export interface ChatSendRequest extends SendChatMessageInput {
   requestId: string;
+}
+
+export interface CancelChatGenerationInput {
+  conversationId: string;
 }

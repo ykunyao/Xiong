@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ChatSendRequest, ChatStreamEvent } from '../shared/chat';
+import type { CancelChatGenerationInput, ChatSendRequest, ChatStreamEvent } from '../shared/chat';
 import { ChatServiceError, type ChatService } from './chat-service';
 import { ProviderSettingsError } from './provider-settings-service';
 
@@ -21,6 +21,11 @@ const chatSendRequestSchema = z.object({
   conversationId: textField.min(1, 'Conversation id is required'),
   content: textField.min(1, 'Message content is required'),
 });
+const cancelChatGenerationSchema = z.object({
+  conversationId: textField
+    .min(1, 'Conversation id is required')
+    .max(128, 'Conversation id is too long'),
+});
 
 export function parseChatSendRequest(input: unknown): ChatSendRequest {
   const result = chatSendRequestSchema.safeParse(input);
@@ -29,6 +34,15 @@ export function parseChatSendRequest(input: unknown): ChatSendRequest {
   }
 
   throw new Error(result.error.issues[0]?.message ?? 'Invalid chat request');
+}
+
+export function parseCancelChatGenerationInput(input: unknown): CancelChatGenerationInput {
+  const result = cancelChatGenerationSchema.safeParse(input);
+  if (result.success) {
+    return result.data;
+  }
+
+  throw new Error(result.error.issues[0]?.message ?? 'Invalid cancellation request');
 }
 
 export function registerChatIpc(ipcMain: ChatIpcRegistrar, service: ChatService): void {
@@ -49,6 +63,12 @@ export function registerChatIpc(ipcMain: ChatIpcRegistrar, service: ChatService)
         message: getUserFacingError(error),
       });
     }
+  });
+
+  ipcMain.handle('chat:cancel-generation', (event, input) => {
+    assertTrustedFrame(event);
+    const request = parseCancelChatGenerationInput(input);
+    return service.cancel(request.conversationId);
   });
 }
 

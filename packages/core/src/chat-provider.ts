@@ -10,8 +10,12 @@ export interface ChatProviderRequest {
   messages: ChatProviderMessage[];
 }
 
+export interface ChatProviderStreamOptions {
+  signal?: AbortSignal;
+}
+
 export interface ChatProvider {
-  stream(request: ChatProviderRequest): AsyncIterable<string>;
+  stream(request: ChatProviderRequest, options?: ChatProviderStreamOptions): AsyncIterable<string>;
 }
 
 export interface MockChatProviderOptions {
@@ -35,15 +39,17 @@ export function createMockChatProvider(options: MockChatProviderOptions = {}): C
   }
 
   return {
-    async *stream(request) {
+    async *stream(request, streamOptions = {}) {
+      streamOptions.signal?.throwIfAborted();
       const userText = findLatestUserText(request.messages);
       const response = Array.from(`${request.characterName}：我收到了你的消息：“${userText}”`);
 
       for (let index = 0; index < response.length; index += chunkSize) {
         if (index > 0 && delayMs > 0) {
-          await sleep(delayMs);
+          await sleep(delayMs, streamOptions.signal);
         }
 
+        streamOptions.signal?.throwIfAborted();
         yield response.slice(index, index + chunkSize).join('');
       }
     },
@@ -61,8 +67,27 @@ function findLatestUserText(messages: ChatProviderMessage[]): string {
   throw new Error('Chat provider request must include a user message');
 }
 
-async function sleep(delayMs: number): Promise<void> {
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, delayMs);
+async function sleep(delayMs: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, delayMs);
+    const handleAbort = (): void => {
+      clearTimeout(timeout);
+      cleanup();
+      try {
+        signal?.throwIfAborted();
+      } catch (error) {
+        reject(error);
+      }
+    };
+    const cleanup = (): void => {
+      signal?.removeEventListener('abort', handleAbort);
+    };
+
+    signal?.addEventListener('abort', handleAbort, { once: true });
   });
 }

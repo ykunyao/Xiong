@@ -52,39 +52,59 @@ describe('chat preload client', () => {
     expect(ipc.listenerCount()).toBe(0);
   });
 
-  test.each(['complete', 'error'] as const)('cleans up after a %s event', async (type) => {
-    const ipc = createFakeIpc();
-    ipc.invoke.mockImplementation(async () => {
-      ipc.emit(
-        type === 'complete'
-          ? {
-              requestId: 'request-1',
-              type,
-              conversationId: 'conversation-1',
-              message: {
-                id: 'message-2',
+  test.each(['complete', 'error', 'cancelled'] as const)(
+    'cleans up after a %s event',
+    async (type) => {
+      const ipc = createFakeIpc();
+      ipc.invoke.mockImplementation(async () => {
+        ipc.emit(
+          type === 'complete'
+            ? {
+                requestId: 'request-1',
+                type,
                 conversationId: 'conversation-1',
-                role: 'assistant',
-                content: '完成',
-                createdAt: 2,
-                updatedAt: 2,
-              },
-            }
-          : {
-              requestId: 'request-1',
-              type,
-              conversationId: 'conversation-1',
-              message: '失败',
-            },
+                message: {
+                  id: 'message-2',
+                  conversationId: 'conversation-1',
+                  role: 'assistant',
+                  content: '完成',
+                  createdAt: 2,
+                  updatedAt: 2,
+                },
+              }
+            : type === 'error'
+              ? {
+                  requestId: 'request-1',
+                  type,
+                  conversationId: 'conversation-1',
+                  message: '失败',
+                }
+              : {
+                  requestId: 'request-1',
+                  type,
+                  conversationId: 'conversation-1',
+                },
+        );
+      });
+
+      await createChatClient(ipc, () => 'request-1').sendMessage(
+        { conversationId: 'conversation-1', content: '你好' },
+        () => undefined,
       );
+
+      expect(ipc.listenerCount()).toBe(0);
+    },
+  );
+
+  test('invokes cancellation for one conversation', async () => {
+    const ipc = createFakeIpc();
+    ipc.invoke.mockResolvedValue(true);
+    const client = createChatClient(ipc, () => 'request-1');
+
+    await expect(client.cancelGeneration('conversation-1')).resolves.toBe(true);
+    expect(ipc.invoke).toHaveBeenCalledWith('chat:cancel-generation', {
+      conversationId: 'conversation-1',
     });
-
-    await createChatClient(ipc, () => 'request-1').sendMessage(
-      { conversationId: 'conversation-1', content: '你好' },
-      () => undefined,
-    );
-
-    expect(ipc.listenerCount()).toBe(0);
   });
 
   test('cleans up when invoking the main process rejects', async () => {

@@ -25,13 +25,14 @@ export function createOpenAICompatibleChatProvider(
   });
 
   return {
-    async *stream(request) {
+    async *stream(request, streamOptions = {}) {
       const instructions = request.messages
         .filter((message) => message.role === 'system')
         .map((message) => message.content)
         .join('\n\n');
       const result = streamText({
         model: provider.chatModel(config.model),
+        ...(streamOptions.signal ? { abortSignal: streamOptions.signal } : {}),
         ...(instructions ? { instructions } : {}),
         messages: request.messages
           .filter((message) => message.role !== 'system')

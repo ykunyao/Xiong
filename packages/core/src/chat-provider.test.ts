@@ -35,6 +35,25 @@ describe('createMockChatProvider', () => {
     }).rejects.toThrow('Chat provider request must include a user message');
   });
 
+  test('aborts a delayed stream before the next deterministic chunk', async () => {
+    const provider = createMockChatProvider({ chunkSize: 1, delayMs: 25 });
+    const controller = new AbortController();
+    const stream = provider.stream(
+      {
+        characterName: '遥',
+        messages: [{ role: 'user', content: '你好' }],
+      },
+      { signal: controller.signal },
+    );
+    const iterator = stream[Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toMatchObject({ value: '遥', done: false });
+    const nextChunk = iterator.next();
+    controller.abort();
+
+    await expect(nextChunk).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
   test.each([0, -1, 1.5])('rejects invalid chunk size %s', (chunkSize) => {
     expect(() => createMockChatProvider({ chunkSize })).toThrow(
       'Mock provider chunk size must be a positive integer',

@@ -105,6 +105,78 @@ describe('chat service', () => {
     expect(events.map((event) => event.type)).toEqual(['user-message', 'delta']);
   });
 
+  test('cancels an active stream while keeping only the persisted user message', async () => {
+    const { repository, messages } = createFakeRepository();
+    const events: ChatProgressEvent[] = [];
+    const streamWaiting = createDeferred<void>();
+    const releaseStream = createDeferred<void>();
+    let receivedSignal: AbortSignal | undefined;
+    const provider: ChatProvider = {
+      async *stream(_request, options) {
+        receivedSignal = options?.signal;
+        yield 'partial';
+        streamWaiting.resolve();
+        await releaseStream.promise;
+        receivedSignal?.throwIfAborted();
+        yield 'finished';
+      },
+    };
+    const service = createChatService(repository, createResolver(provider));
+    const sendPromise = service.send(
+      { conversationId: conversation.id, content: '你好' },
+      (event) => events.push(event),
+    );
+    await streamWaiting.promise;
+
+    try {
+      expect(service.cancel(conversation.id)).toBe(true);
+    } finally {
+      releaseStream.resolve();
+    }
+    await sendPromise;
+
+    expect(receivedSignal?.aborted).toBe(true);
+    expect(messages.map(({ role, content }) => ({ role, content }))).toEqual([
+      { role: 'user', content: '你好' },
+    ]);
+    expect(events.map((event) => event.type)).toEqual(['user-message', 'delta', 'cancelled']);
+    expect(service.cancel(conversation.id)).toBe(false);
+  });
+
+  test('cancels before provider resolution without persisting the user message', async () => {
+    const { repository, messages } = createFakeRepository();
+    const events: ChatProgressEvent[] = [];
+    const resolutionStarted = createDeferred<void>();
+    const releaseResolution = createDeferred<void>();
+    const provider: ChatProvider = {
+      async *stream() {
+        yield 'unused';
+      },
+    };
+    const service = createChatService(repository, {
+      resolveChatProvider: async () => {
+        resolutionStarted.resolve();
+        await releaseResolution.promise;
+        return provider;
+      },
+    });
+    const sendPromise = service.send(
+      { conversationId: conversation.id, content: '你好' },
+      (event) => events.push(event),
+    );
+    await resolutionStarted.promise;
+
+    try {
+      expect(service.cancel(conversation.id)).toBe(true);
+    } finally {
+      releaseResolution.resolve();
+    }
+    await sendPromise;
+
+    expect(messages).toHaveLength(0);
+    expect(events.map((event) => event.type)).toEqual(['cancelled']);
+  });
+
   test('rejects a missing conversation before persisting a user message', async () => {
     const { repository, messages } = createFakeRepository({ includeConversation: false });
     const provider: ChatProvider = {

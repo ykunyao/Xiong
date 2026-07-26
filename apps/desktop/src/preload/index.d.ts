@@ -28,6 +28,7 @@ declare global {
         saveSettings(input: SaveProviderSettingsInput): Promise<ProviderSettingsView>;
       };
       chat: {
+        cancelGeneration(conversationId: string): Promise<boolean>;
         sendMessage(
           input: SendChatMessageInput,
           onEvent: (event: ChatStreamEvent) => void,

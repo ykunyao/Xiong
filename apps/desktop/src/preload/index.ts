@@ -25,7 +25,6 @@ const xiongApi = Object.freeze({
       ipcRenderer.invoke('library:create-conversation', input),
     listMessages: async (conversationId: string) =>
       ipcRenderer.invoke('library:list-messages', conversationId),
-    addMessage: async (input: unknown) => ipcRenderer.invoke('library:add-message', input),
   }),
   chat: Object.freeze(chatClient),
 });

@@ -1,6 +1,11 @@
-import type { CharacterRecord, ConversationRecord, MessageRecord, MessageRole } from '@xiong/db';
+import type { CharacterRecord, ConversationRecord, MessageRecord } from '@xiong/db';
 import type { FormEvent } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import {
+  appendMessageIfMissing,
+  chatActivityReducer,
+  initialChatActivityState,
+} from './chat-ui-state';
 
 const emptyCharacterForm = {
   name: '',
@@ -17,9 +22,14 @@ export function App(): React.JSX.Element {
   const [selectedConversationId, setSelectedConversationId] = useState('');
   const [characterForm, setCharacterForm] = useState(emptyCharacterForm);
   const [conversationTitle, setConversationTitle] = useState('');
-  const [messageRole, setMessageRole] = useState<MessageRole>('user');
-  const [messageContent, setMessageContent] = useState('');
+  const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
+  const [chatActivity, dispatchChatActivity] = useReducer(
+    chatActivityReducer,
+    initialChatActivityState,
+  );
   const [status, setStatus] = useState('准备好创建第一个角色。');
+  const selectedConversationIdRef = useRef('');
+  const activeSendConversationIdsRef = useRef(new Set<string>());
 
   const selectedCharacter = useMemo(
     () => characters.find((character) => character.id === selectedCharacterId),
@@ -29,6 +39,9 @@ export function App(): React.JSX.Element {
     () => conversations.find((conversation) => conversation.id === selectedConversationId),
     [conversations, selectedConversationId],
   );
+  const messageDraft = messageDrafts[selectedConversationId] ?? '';
+  const streamingReply = chatActivity.streamingReplies[selectedConversationId] ?? '';
+  const isGenerating = chatActivity.generatingConversationIds.includes(selectedConversationId);
 
   useEffect(() => {
     void window.xiong.app.getVersion().then(setVersion);
@@ -42,6 +55,10 @@ export function App(): React.JSX.Element {
   }, [selectedCharacterId]);
 
   useEffect(() => {
+    selectedConversationIdRef.current = selectedConversationId;
+  }, [selectedConversationId]);
+
+  useEffect(() => {
     if (selectedConversationId) {
       void refreshMessages(selectedConversationId);
     }
@@ -50,19 +67,33 @@ export function App(): React.JSX.Element {
   async function refreshCharacters(selectId?: string): Promise<void> {
     const nextCharacters = await window.xiong.library.listCharacters();
     setCharacters(nextCharacters);
-    setSelectedCharacterId((currentId) => selectId ?? currentId ?? nextCharacters[0]?.id ?? '');
+    setSelectedCharacterId(
+      (currentId) =>
+        selectId ??
+        (nextCharacters.some((character) => character.id === currentId)
+          ? currentId
+          : (nextCharacters[0]?.id ?? '')),
+    );
   }
 
   async function refreshConversations(characterId: string, selectId?: string): Promise<void> {
     const nextConversations = await window.xiong.library.listConversations(characterId);
     setConversations(nextConversations);
-    setSelectedConversationId(
-      (currentId) => selectId ?? currentId ?? nextConversations[0]?.id ?? '',
-    );
+    const currentId = selectedConversationIdRef.current;
+    const nextId =
+      selectId ??
+      (nextConversations.some((conversation) => conversation.id === currentId)
+        ? currentId
+        : (nextConversations[0]?.id ?? ''));
+    selectedConversationIdRef.current = nextId;
+    setSelectedConversationId(nextId);
   }
 
   async function refreshMessages(conversationId: string): Promise<void> {
-    setMessages(await window.xiong.library.listMessages(conversationId));
+    const nextMessages = await window.xiong.library.listMessages(conversationId);
+    if (selectedConversationIdRef.current === conversationId) {
+      setMessages(nextMessages);
+    }
   }
 
   async function createCharacter(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -73,6 +104,7 @@ export function App(): React.JSX.Element {
       setCharacterForm(emptyCharacterForm);
       setConversations([]);
       setMessages([]);
+      selectedConversationIdRef.current = '';
       setSelectedConversationId('');
       await refreshCharacters(character.id);
       setStatus(`已创建角色：${character.name}`);
@@ -102,32 +134,91 @@ export function App(): React.JSX.Element {
     }
   }
 
-  async function addMessage(event: FormEvent<HTMLFormElement>): Promise<void> {
+  async function sendMessage(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (!selectedConversationId) {
+    const conversationId = selectedConversationId;
+    const content = messageDraft.trim();
+
+    if (!conversationId) {
       setStatus('请先选择一个对话。');
       return;
     }
 
+    if (!content) {
+      setStatus('请输入消息内容。');
+      return;
+    }
+
+    if (isGenerating || activeSendConversationIdsRef.current.has(conversationId)) {
+      setStatus('当前对话正在生成回复，请稍候。');
+      return;
+    }
+
+    let userMessagePersisted = false;
+    activeSendConversationIdsRef.current.add(conversationId);
+    dispatchChatActivity({ type: 'start', conversationId });
+    setMessageDrafts((current) => ({ ...current, [conversationId]: '' }));
+    setStatus('正在保存消息…');
+
     try {
-      const message = await window.xiong.library.addMessage({
-        conversationId: selectedConversationId,
-        role: messageRole,
-        content: messageContent,
+      await window.xiong.chat.sendMessage({ conversationId, content }, (streamEvent) => {
+        if (streamEvent.conversationId !== conversationId) {
+          return;
+        }
+
+        dispatchChatActivity({ type: 'event', event: streamEvent });
+
+        if (streamEvent.type === 'user-message') {
+          userMessagePersisted = true;
+          if (selectedConversationIdRef.current === conversationId) {
+            setMessages((current) => appendMessageIfMissing(current, streamEvent.message));
+          }
+          setStatus('消息已保存，正在生成模拟回复…');
+          return;
+        }
+
+        if (streamEvent.type === 'complete') {
+          if (selectedConversationIdRef.current === conversationId) {
+            setMessages((current) => appendMessageIfMissing(current, streamEvent.message));
+          }
+          setStatus('模拟回复已生成并保存。');
+          return;
+        }
+
+        if (streamEvent.type === 'error') {
+          if (!userMessagePersisted) {
+            restoreDraft(conversationId, content);
+          }
+          setStatus(streamEvent.message);
+        }
       });
-      setMessageContent('');
-      await refreshMessages(selectedConversationId);
-      setStatus(`已添加 ${message.role} 消息。`);
     } catch (error) {
+      if (!userMessagePersisted) {
+        restoreDraft(conversationId, content);
+      }
       setStatus(getErrorMessage(error));
+    } finally {
+      activeSendConversationIdsRef.current.delete(conversationId);
+      dispatchChatActivity({ type: 'finish', conversationId });
     }
   }
 
+  function restoreDraft(conversationId: string, content: string): void {
+    setMessageDrafts((current) =>
+      current[conversationId]
+        ? current
+        : {
+            ...current,
+            [conversationId]: content,
+          },
+    );
+  }
+
   return (
-    <main className="shell" aria-label="Xiong Phase 1">
+    <main className="shell" aria-label="Xiong Mock Chat Loop">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Phase 1 · Persistent Library</p>
+          <p className="eyebrow">Phase 2 · Mock Chat Loop</p>
           <h1>Xiong</h1>
         </div>
         <p className="version">v{version}</p>
@@ -179,6 +270,7 @@ export function App(): React.JSX.Element {
             }
             onSelect={(id) => {
               setSelectedCharacterId(id);
+              selectedConversationIdRef.current = '';
               setSelectedConversationId('');
               setConversations([]);
               setMessages([]);
@@ -212,6 +304,7 @@ export function App(): React.JSX.Element {
             getTitle={(conversation) => conversation.title}
             getSubtitle={(conversation) => new Date(conversation.createdAt).toLocaleString()}
             onSelect={(id) => {
+              selectedConversationIdRef.current = id;
               setSelectedConversationId(id);
               setMessages([]);
             }}
@@ -225,36 +318,44 @@ export function App(): React.JSX.Element {
           }
         >
           <div className="messages" aria-live="polite">
-            {messages.length === 0 ? (
-              <p className="empty">还没有消息。先写一条本地消息试试。</p>
-            ) : (
-              messages.map((message) => (
-                <article className={`message ${message.role}`} key={message.id}>
-                  <strong>{message.role}</strong>
-                  <p>{message.content}</p>
-                </article>
-              ))
+            {messages.length === 0
+              ? !streamingReply && <p className="empty">还没有消息。发送一句话开始聊天。</p>
+              : messages.map((message) => (
+                  <article className={`message ${message.role}`} key={message.id}>
+                    <strong>{message.role}</strong>
+                    <p>{message.content}</p>
+                  </article>
+                ))}
+            {streamingReply && (
+              <article className="message assistant streaming" aria-label="正在生成的模拟回复">
+                <strong>assistant · streaming</strong>
+                <p>
+                  {streamingReply}
+                  <span className="streaming-cursor" aria-hidden="true">
+                    ▍
+                  </span>
+                </p>
+              </article>
             )}
           </div>
 
-          <form className="composer" onSubmit={(event) => void addMessage(event)}>
-            <select
-              value={messageRole}
-              onChange={(event) => setMessageRole(event.target.value as MessageRole)}
-              disabled={!selectedConversation}
-            >
-              <option value="user">user</option>
-              <option value="assistant">assistant</option>
-              <option value="system">system</option>
-            </select>
+          <form className="composer" onSubmit={(event) => void sendMessage(event)}>
             <textarea
-              value={messageContent}
-              onChange={(event) => setMessageContent(event.target.value)}
-              placeholder="写一条本地消息，验证保存链路。"
-              disabled={!selectedConversation}
+              value={messageDraft}
+              onChange={(event) =>
+                setMessageDrafts((current) => ({
+                  ...current,
+                  [selectedConversationId]: event.target.value,
+                }))
+              }
+              placeholder="输入消息，Mock Provider 会流式回复。"
+              disabled={!selectedConversation || isGenerating}
             />
-            <button type="submit" disabled={!selectedConversation}>
-              添加消息
+            <button
+              type="submit"
+              disabled={!selectedConversation || isGenerating || !messageDraft.trim()}
+            >
+              {isGenerating ? '生成中…' : '发送'}
             </button>
           </form>
         </Panel>

@@ -1,7 +1,6 @@
 export {};
 
 import type {
-  AddMessageInput,
   CharacterRecord,
   ConversationRecord,
   CreateCharacterInput,
@@ -22,7 +21,6 @@ declare global {
         listConversations(characterId: string): Promise<ConversationRecord[]>;
         createConversation(input: CreateConversationInput): Promise<ConversationRecord>;
         listMessages(conversationId: string): Promise<MessageRecord[]>;
-        addMessage(input: AddMessageInput): Promise<MessageRecord>;
       };
       chat: {
         sendMessage(

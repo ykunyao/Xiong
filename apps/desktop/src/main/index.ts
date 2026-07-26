@@ -30,6 +30,7 @@ function installContentSecurityPolicy(): void {
 }
 
 let database: XiongDatabase | undefined;
+let mainWindow: BrowserWindow | undefined;
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -46,6 +47,13 @@ function createWindow(): void {
       contextIsolation: true,
       sandbox: true,
     },
+  });
+  mainWindow = window;
+
+  window.on('closed', () => {
+    if (mainWindow === window) {
+      mainWindow = undefined;
+    }
   });
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -97,7 +105,7 @@ void app.whenReady().then(() => {
   createWindow();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (!mainWindow || mainWindow.isDestroyed()) {
       createWindow();
     }
   });

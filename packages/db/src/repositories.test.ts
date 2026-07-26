@@ -54,6 +54,16 @@ describe('library repository', () => {
           title: '初次见面',
         },
       ]);
+      expect(repository.getCharacter(character.id)).toMatchObject({
+        id: character.id,
+        name: '遥',
+      });
+      expect(repository.getConversation(conversation.id)).toMatchObject({
+        id: conversation.id,
+        characterId: character.id,
+      });
+      expect(repository.getCharacter('missing-character')).toBeUndefined();
+      expect(repository.getConversation('missing-conversation')).toBeUndefined();
       expect(repository.listMessages(conversation.id).map((message) => message.id)).toEqual([
         userMessage.id,
         assistantMessage.id,

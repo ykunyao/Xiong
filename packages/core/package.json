@@ -8,5 +8,17 @@
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "png-chunk-text": "1.0.0",
+    "png-chunks-extract": "1.0.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.0.1",
+    "@types/png-chunk-text": "1.0.3",
+    "@types/png-chunks-encode": "1.0.2",
+    "@types/png-chunks-extract": "1.0.2",
+    "png-chunks-encode": "1.0.0"
   }
 }

@@ -46,6 +46,19 @@
       "out/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "../../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "../../third-party-licenses",
+        "to": "third-party-licenses",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "win": {
       "target": [
         "dir"

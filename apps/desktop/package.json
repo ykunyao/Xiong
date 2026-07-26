@@ -12,7 +12,7 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "package:win": "corepack pnpm build && electron-builder --win --dir && node ../../scripts/rebuild-better-sqlite3-node.cjs"
+    "package:win": "corepack pnpm build && electron-builder --win --dir && node ../../scripts/rebuild-better-sqlite3-node.cjs --preserve-packaged-electron"
   },
   "dependencies": {
     "@xiong/core": "workspace:*",
@@ -22,6 +22,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@electron/rebuild": "4.0.4",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.2.0",
@@ -33,6 +34,7 @@
   "build": {
     "appId": "com.xiong.desktop",
     "productName": "Xiong",
+    "npmRebuild": false,
     "directories": {
       "output": "dist"
     },

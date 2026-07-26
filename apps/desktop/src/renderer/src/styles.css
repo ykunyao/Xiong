@@ -239,6 +239,10 @@ button[type='submit'] {
   background: rgb(142 229 207 / 8%);
 }
 
+.message.streaming {
+  box-shadow: inset 0 0 0 1px rgb(142 229 207 / 8%);
+}
+
 .message.user {
   align-self: flex-end;
   border-color: rgb(121 84 255 / 32%);
@@ -261,12 +265,23 @@ button[type='submit'] {
 }
 
 .composer {
-  grid-template-columns: 130px 1fr;
+  grid-template-columns: 1fr;
 }
 
 .composer textarea,
 .composer button {
-  grid-column: 1 / -1;
+  grid-column: 1;
+}
+
+.streaming-cursor {
+  color: #8ee5cf;
+  animation: cursor-blink 0.8s steps(1) infinite;
+}
+
+@keyframes cursor-blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 .status {

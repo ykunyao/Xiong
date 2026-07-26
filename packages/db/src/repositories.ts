@@ -32,8 +32,10 @@ export interface AddMessageInput {
 
 export interface LibraryRepository {
   listCharacters(): CharacterRecord[];
+  getCharacter(id: string): CharacterRecord | undefined;
   createCharacter(input: CreateCharacterInput): CharacterRecord;
   listConversations(characterId: string): ConversationRecord[];
+  getConversation(id: string): ConversationRecord | undefined;
   createConversation(input: CreateConversationInput): ConversationRecord;
   listMessages(conversationId: string): MessageRecord[];
   addMessage(input: AddMessageInput): MessageRecord;
@@ -43,6 +45,8 @@ export function createLibraryRepository(database: XiongDatabase): LibraryReposit
   return {
     listCharacters: () =>
       database.db.select().from(characters).orderBy(asc(characters.createdAt)).all(),
+
+    getCharacter: (id) => database.db.select().from(characters).where(eq(characters.id, id)).get(),
 
     createCharacter: (input) => {
       const now = Date.now();
@@ -68,6 +72,9 @@ export function createLibraryRepository(database: XiongDatabase): LibraryReposit
         .where(eq(conversations.characterId, characterId))
         .orderBy(asc(conversations.createdAt))
         .all(),
+
+    getConversation: (id) =>
+      database.db.select().from(conversations).where(eq(conversations.id, id)).get(),
 
     createConversation: (input) => {
       const now = Date.now();

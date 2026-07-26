@@ -1,10 +1,13 @@
 import { createMockChatProvider } from '@xiong/core';
 import { createLibraryRepository, createXiongDatabase, type XiongDatabase } from '@xiong/db';
-import { app, BrowserWindow, ipcMain, session } from 'electron';
-import { join } from 'node:path';
+import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { registerChatIpc } from './chat-ipc';
 import { createChatService } from './chat-service';
 import { registerLibraryIpc } from './library-ipc';
+
+const mainDirectory = dirname(fileURLToPath(import.meta.url));
 
 const productionCsp = [
   "default-src 'self'",
@@ -32,7 +35,7 @@ function installContentSecurityPolicy(): void {
 let database: XiongDatabase | undefined;
 let mainWindow: BrowserWindow | undefined;
 
-function createWindow(): void {
+async function createWindow(): Promise<void> {
   const window = new BrowserWindow({
     width: 1180,
     height: 760,
@@ -42,7 +45,7 @@ function createWindow(): void {
     title: 'Xiong',
     backgroundColor: '#101419',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: join(mainDirectory, '../preload/index.js'),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -78,13 +81,22 @@ function createWindow(): void {
   });
 
   if (process.env.ELECTRON_RENDERER_URL) {
-    void window.loadURL(process.env.ELECTRON_RENDERER_URL);
+    await window.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    void window.loadFile(join(__dirname, '../renderer/index.html'));
+    await window.loadFile(join(mainDirectory, '../renderer/index.html'));
   }
 }
 
-void app.whenReady().then(() => {
+function reportStartupFailure(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error('Failed to start Xiong.', error);
+  dialog.showErrorBox('Xiong 启动失败', `无法启动应用：${message}`);
+  app.quit();
+}
+
+async function startApplication(): Promise<void> {
+  await app.whenReady();
+
   database = createXiongDatabase(join(app.getPath('userData'), 'xiong.sqlite'));
   const repository = createLibraryRepository(database);
   registerLibraryIpc(ipcMain, repository);
@@ -102,14 +114,16 @@ void app.whenReady().then(() => {
     installContentSecurityPolicy();
   }
 
-  createWindow();
+  await createWindow();
 
   app.on('activate', () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
-      createWindow();
+      void createWindow().catch(reportStartupFailure);
     }
   });
-});
+}
+
+void startApplication().catch(reportStartupFailure);
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

@@ -17,6 +17,19 @@ export default tseslint.config(
         ...globals.node,
       },
     },
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        {
+          name: '__dirname',
+          message: 'TypeScript files are ESM; derive paths from import.meta.url instead.',
+        },
+        {
+          name: '__filename',
+          message: 'TypeScript files are ESM; derive paths from import.meta.url instead.',
+        },
+      ],
+    },
   },
   {
     files: ['scripts/**/*.cjs'],

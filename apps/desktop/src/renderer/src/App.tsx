@@ -9,10 +9,19 @@ import type {
   SecretStorageStatus,
 } from '../../shared/provider-settings';
 import {
+  defaultOpenAICompatibleGenerationParams,
+  openAICompatibleGenerationParamLimits,
+} from '../../shared/provider-settings';
+import {
   appendMessageIfMissing,
   chatActivityReducer,
   initialChatActivityState,
 } from './chat-ui-state';
+import {
+  buildProviderSettingsSaveInput,
+  formatProviderGenerationParams,
+  type ProviderSettingsFormState,
+} from './provider-settings-form';
 
 const emptyCharacterForm = {
   name: '',
@@ -20,20 +29,13 @@ const emptyCharacterForm = {
   firstMessage: '',
 };
 
-interface ProviderFormState {
-  activeProvider: ActiveProvider;
-  baseUrl: string;
-  model: string;
-  apiKey: string;
-  clearApiKey: boolean;
-}
-
-const initialProviderForm: ProviderFormState = {
+const initialProviderForm: ProviderSettingsFormState = {
   activeProvider: 'mock',
   baseUrl: 'https://api.openai.com/v1',
   model: '',
   apiKey: '',
   clearApiKey: false,
+  ...formatProviderGenerationParams(defaultOpenAICompatibleGenerationParams),
 };
 
 export function App(): React.JSX.Element {
@@ -47,7 +49,7 @@ export function App(): React.JSX.Element {
   const [conversationTitle, setConversationTitle] = useState('');
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
   const [providerSettings, setProviderSettings] = useState<ProviderSettingsView | null>(null);
-  const [providerForm, setProviderForm] = useState<ProviderFormState>(initialProviderForm);
+  const [providerForm, setProviderForm] = useState<ProviderSettingsFormState>(initialProviderForm);
   const [providerSaving, setProviderSaving] = useState(false);
   const [stopRequestedConversationIds, setStopRequestedConversationIds] = useState<string[]>([]);
   const [chatActivity, dispatchChatActivity] = useReducer(
@@ -140,6 +142,7 @@ export function App(): React.JSX.Element {
         model: nextSettings.openAICompatible.model,
         apiKey: '',
         clearApiKey: false,
+        ...formatProviderGenerationParams(nextSettings.openAICompatible),
       });
     } catch (error) {
       setStatus(getErrorMessage(error));
@@ -148,17 +151,15 @@ export function App(): React.JSX.Element {
 
   async function saveProviderSettings(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
+    const saveInput = buildProviderSettingsSaveInput(providerForm);
+    if (!saveInput.success) {
+      setStatus(saveInput.message);
+      return;
+    }
     setProviderSaving(true);
 
     try {
-      const apiKey = providerForm.apiKey.trim();
-      const nextSettings = await window.xiong.providers.saveSettings({
-        activeProvider: providerForm.activeProvider,
-        baseUrl: providerForm.baseUrl,
-        model: providerForm.model,
-        ...(apiKey ? { apiKey } : {}),
-        ...(providerForm.clearApiKey ? { clearApiKey: true } : {}),
-      });
+      const nextSettings = await window.xiong.providers.saveSettings(saveInput.value);
       setProviderSettings(nextSettings);
       setProviderForm({
         activeProvider: nextSettings.activeProvider,
@@ -166,6 +167,7 @@ export function App(): React.JSX.Element {
         model: nextSettings.openAICompatible.model,
         apiKey: '',
         clearApiKey: false,
+        ...formatProviderGenerationParams(nextSettings.openAICompatible),
       });
       setStatus(
         nextSettings.activeProvider === 'mock'
@@ -399,6 +401,66 @@ export function App(): React.JSX.Element {
                 disabled={!isOpenAICompatible || providerSaving || isGenerating}
                 required={isOpenAICompatible}
               />
+            </label>
+
+            <label>
+              温度
+              <input
+                type="number"
+                value={providerForm.temperature}
+                onChange={(event) =>
+                  setProviderForm((current) => ({
+                    ...current,
+                    temperature: event.target.value,
+                  }))
+                }
+                min={openAICompatibleGenerationParamLimits.temperature.min}
+                max={openAICompatibleGenerationParamLimits.temperature.max}
+                step="any"
+                disabled={!isOpenAICompatible || providerSaving || isGenerating}
+                required={isOpenAICompatible}
+              />
+              <small className="field-hint">范围 0–2；越高越随机。</small>
+            </label>
+
+            <label>
+              最大输出 Token
+              <input
+                type="number"
+                value={providerForm.maxOutputTokens}
+                onChange={(event) =>
+                  setProviderForm((current) => ({
+                    ...current,
+                    maxOutputTokens: event.target.value,
+                  }))
+                }
+                min={openAICompatibleGenerationParamLimits.maxOutputTokens.min}
+                max={openAICompatibleGenerationParamLimits.maxOutputTokens.max}
+                step="1"
+                disabled={!isOpenAICompatible || providerSaving || isGenerating}
+                required={isOpenAICompatible}
+              />
+              <small className="field-hint">范围 1–32768。</small>
+            </label>
+
+            <label>
+              请求超时（秒）
+              <input
+                type="number"
+                value={providerForm.requestTimeoutSeconds}
+                onChange={(event) =>
+                  setProviderForm((current) => ({
+                    ...current,
+                    requestTimeoutSeconds: event.target.value,
+                  }))
+                }
+                min={openAICompatibleGenerationParamLimits.requestTimeoutMs.min / 1_000}
+                max={openAICompatibleGenerationParamLimits.requestTimeoutMs.max / 1_000}
+                step="1"
+                disabled={!isOpenAICompatible || providerSaving || isGenerating}
+                required={isOpenAICompatible}
+              />
+              <small className="field-hint">范围 1–600 秒；超时不会保存未完成回复。</small>
             </label>
 
             <label>

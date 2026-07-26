@@ -84,6 +84,37 @@ describe('chat UI state', () => {
     expect(cancelled.streamingReplies['conversation-1']).toBeUndefined();
   });
 
+  test('clears transient output after a timeout error', () => {
+    const streaming = chatActivityReducer(
+      chatActivityReducer(initialChatActivityState, {
+        type: 'start',
+        conversationId: 'conversation-1',
+      }),
+      {
+        type: 'event',
+        event: {
+          requestId: 'request-1',
+          type: 'delta',
+          conversationId: 'conversation-1',
+          delta: '未完成',
+        },
+      },
+    );
+
+    const timedOut = chatActivityReducer(streaming, {
+      type: 'event',
+      event: {
+        requestId: 'request-1',
+        type: 'error',
+        conversationId: 'conversation-1',
+        message: '模型服务请求超时，未保存未完成的回复，请重试。',
+      },
+    });
+
+    expect(timedOut.generatingConversationIds).toEqual([]);
+    expect(timedOut.streamingReplies['conversation-1']).toBeUndefined();
+  });
+
   test('appends a persisted message only once', () => {
     const message: MessageRecord = {
       id: 'message-1',

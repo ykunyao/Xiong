@@ -112,6 +112,30 @@ describe('chat ipc', () => {
     });
   });
 
+  test('maps request timeouts to a distinct safe user-facing event', async () => {
+    const service: ChatService = {
+      cancel: () => false,
+      send: async () => {
+        throw new ChatServiceError('request-timeout', 'internal timeout detail');
+      },
+    };
+    const { handler } = registerTestHandler(service);
+    const { event, send } = createTrustedEvent();
+
+    await handler(event, {
+      requestId: 'request-1',
+      conversationId: 'conversation-1',
+      content: '你好',
+    });
+
+    expect(send).toHaveBeenCalledWith('chat:stream-event', {
+      requestId: 'request-1',
+      type: 'error',
+      conversationId: 'conversation-1',
+      message: '模型服务请求超时，未保存未完成的回复，请重试。',
+    });
+  });
+
   test('does not expose unexpected provider errors to the renderer', async () => {
     const service: ChatService = {
       cancel: () => false,

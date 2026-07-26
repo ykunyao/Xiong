@@ -18,6 +18,13 @@ export interface ChatProvider {
   stream(request: ChatProviderRequest, options?: ChatProviderStreamOptions): AsyncIterable<string>;
 }
 
+export class ChatProviderTimeoutError extends Error {
+  constructor(message = 'The chat provider request timed out', options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'ChatProviderTimeoutError';
+  }
+}
+
 export interface MockChatProviderOptions {
   chunkSize?: number;
   delayMs?: number;

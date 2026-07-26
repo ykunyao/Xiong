@@ -1,9 +1,14 @@
 import type { ChatProvider } from '@xiong/core';
 import type { ProviderConfigRepository } from '@xiong/db';
 import type {
+  OpenAICompatibleGenerationParams,
   ProviderSettingsView,
   SaveProviderSettingsInput,
   SecretStorageStatus,
+} from '../shared/provider-settings';
+import {
+  defaultOpenAICompatibleGenerationParams,
+  openAICompatibleGenerationParamLimits,
 } from '../shared/provider-settings';
 import type { OpenAICompatibleChatProviderConfig } from './openai-compatible-chat-provider';
 
@@ -12,6 +17,9 @@ export const defaultOpenAICompatibleBaseUrl = 'https://api.openai.com/v1';
 export type ProviderSettingsErrorCode =
   | 'invalid-base-url'
   | 'model-required'
+  | 'temperature-out-of-range'
+  | 'max-output-tokens-out-of-range'
+  | 'request-timeout-out-of-range'
   | 'secret-storage-unavailable'
   | 'secret-storage-insecure'
   | 'secret-decryption-failed'
@@ -59,12 +67,14 @@ export function createProviderSettingsService(
 
   async function getSettings(): Promise<ProviderSettingsView> {
     const config = repository.getOpenAICompatibleConfig();
+    const generationParams = readStoredGenerationParams(config?.params);
     return {
       activeProvider: repository.getActiveProviderType(),
       openAICompatible: {
         baseUrl: config?.baseUrl ?? defaultOpenAICompatibleBaseUrl,
         model: config?.defaultModel ?? '',
         hasApiKey: Boolean(config?.apiKeyRef),
+        ...generationParams,
       },
       secretStorageStatus: await secretCodec.getStatus(),
     };
@@ -84,6 +94,15 @@ export function createProviderSettingsService(
       if (!model) {
         throw new ProviderSettingsError('model-required', 'A model id is required');
       }
+
+      const existingParams = readStoredGenerationParams(
+        repository.getOpenAICompatibleConfig()?.params,
+      );
+      const generationParams = validateGenerationParams({
+        temperature: input.temperature ?? existingParams.temperature,
+        maxOutputTokens: input.maxOutputTokens ?? existingParams.maxOutputTokens,
+        requestTimeoutMs: input.requestTimeoutMs ?? existingParams.requestTimeoutMs,
+      });
 
       const apiKey = input.apiKey?.trim() ?? '';
       let encryptedApiKey: string | null | undefined;
@@ -110,6 +129,7 @@ export function createProviderSettingsService(
       repository.saveOpenAICompatibleConfig({
         baseUrl,
         defaultModel: model,
+        params: { ...generationParams },
         ...(encryptedApiKey === undefined ? {} : { encryptedApiKey }),
         activate: true,
       });
@@ -143,11 +163,10 @@ export function createProviderSettingsService(
           const decrypted = await secretCodec.decrypt(encryptedValue);
           apiKey = decrypted.value;
           if (decrypted.reencryptedValue) {
-            repository.saveOpenAICompatibleConfig({
-              baseUrl: config.baseUrl,
-              defaultModel: config.defaultModel,
-              encryptedApiKey: decrypted.reencryptedValue,
-              activate: true,
+            repository.rotateEncryptedSecretIfUnchanged({
+              apiKeyRef: config.apiKeyRef,
+              expectedEncryptedValue: encryptedValue,
+              encryptedValue: decrypted.reencryptedValue,
             });
           }
         } catch (error) {
@@ -162,13 +181,78 @@ export function createProviderSettingsService(
         }
       }
 
+      const generationParams = readStoredGenerationParams(config.params);
       return createOpenAICompatibleProvider({
         baseUrl: config.baseUrl,
         model: config.defaultModel,
         ...(apiKey ? { apiKey } : {}),
+        ...generationParams,
       });
     },
   };
+}
+
+function readStoredGenerationParams(
+  params: Record<string, unknown> | undefined,
+): OpenAICompatibleGenerationParams {
+  const defaults = defaultOpenAICompatibleGenerationParams;
+  const temperature = params?.temperature;
+  const maxOutputTokens = params?.maxOutputTokens;
+  const requestTimeoutMs = params?.requestTimeoutMs;
+
+  return {
+    temperature: isValidTemperature(temperature) ? temperature : defaults.temperature,
+    maxOutputTokens: isValidMaxOutputTokens(maxOutputTokens)
+      ? maxOutputTokens
+      : defaults.maxOutputTokens,
+    requestTimeoutMs: isValidRequestTimeoutMs(requestTimeoutMs)
+      ? requestTimeoutMs
+      : defaults.requestTimeoutMs,
+  };
+}
+
+function validateGenerationParams(
+  params: OpenAICompatibleGenerationParams,
+): OpenAICompatibleGenerationParams {
+  if (!isValidTemperature(params.temperature)) {
+    throw new ProviderSettingsError(
+      'temperature-out-of-range',
+      'Temperature must be between 0 and 2',
+    );
+  }
+  if (!isValidMaxOutputTokens(params.maxOutputTokens)) {
+    throw new ProviderSettingsError(
+      'max-output-tokens-out-of-range',
+      'Maximum output tokens must be an integer between 1 and 32768',
+    );
+  }
+  if (!isValidRequestTimeoutMs(params.requestTimeoutMs)) {
+    throw new ProviderSettingsError(
+      'request-timeout-out-of-range',
+      'Request timeout must be whole seconds between 1 and 600',
+    );
+  }
+  return params;
+}
+
+function isValidTemperature(value: unknown): value is number {
+  const { min, max } = openAICompatibleGenerationParamLimits.temperature;
+  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+}
+
+function isValidMaxOutputTokens(value: unknown): value is number {
+  const { min, max } = openAICompatibleGenerationParamLimits.maxOutputTokens;
+  return Number.isInteger(value) && Number(value) >= min && Number(value) <= max;
+}
+
+function isValidRequestTimeoutMs(value: unknown): value is number {
+  const { min, max } = openAICompatibleGenerationParamLimits.requestTimeoutMs;
+  return (
+    Number.isInteger(value) &&
+    Number(value) >= min &&
+    Number(value) <= max &&
+    Number(value) % 1_000 === 0
+  );
 }
 
 export function normalizeProviderBaseUrl(value: string): string {

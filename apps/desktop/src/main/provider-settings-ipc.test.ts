@@ -5,6 +5,7 @@ import {
   registerProviderSettingsIpc,
 } from './provider-settings-ipc';
 import { ProviderSettingsError, type ProviderSettingsService } from './provider-settings-service';
+import { defaultOpenAICompatibleGenerationParams } from '../shared/provider-settings';
 
 const settingsView: ProviderSettingsView = {
   activeProvider: 'openai-compatible',
@@ -12,6 +13,9 @@ const settingsView: ProviderSettingsView = {
     baseUrl: 'https://provider.example/v1',
     model: 'roleplay-model',
     hasApiKey: true,
+    temperature: 0.7,
+    maxOutputTokens: 2048,
+    requestTimeoutMs: 60_000,
   },
   secretStorageStatus: 'available',
 };
@@ -24,6 +28,9 @@ describe('provider settings ipc', () => {
         baseUrl: ' https://provider.example/v1 ',
         model: ' roleplay-model ',
         apiKey: ' test-key ',
+        temperature: 0.7,
+        maxOutputTokens: 2048,
+        requestTimeoutMs: 60_000,
       }),
     ).toEqual({
       activeProvider: 'openai-compatible',
@@ -31,6 +38,9 @@ describe('provider settings ipc', () => {
       model: 'roleplay-model',
       apiKey: 'test-key',
       clearApiKey: false,
+      temperature: 0.7,
+      maxOutputTokens: 2048,
+      requestTimeoutMs: 60_000,
     });
   });
 
@@ -53,6 +63,33 @@ describe('provider settings ipc', () => {
       },
       'API key cannot be replaced and cleared at the same time',
     ],
+    [
+      {
+        activeProvider: 'openai-compatible',
+        baseUrl: 'https://example.com/v1',
+        model: 'model-one',
+        temperature: 2.01,
+      },
+      'Temperature must be between 0 and 2',
+    ],
+    [
+      {
+        activeProvider: 'openai-compatible',
+        baseUrl: 'https://example.com/v1',
+        model: 'model-one',
+        maxOutputTokens: 32_769,
+      },
+      'Maximum output tokens must be an integer between 1 and 32768',
+    ],
+    [
+      {
+        activeProvider: 'openai-compatible',
+        baseUrl: 'https://example.com/v1',
+        model: 'model-one',
+        requestTimeoutMs: 1_500,
+      },
+      'Request timeout must be whole seconds between 1 and 600',
+    ],
   ])('rejects invalid settings %#', (input, message) => {
     expect(() => parseSaveProviderSettingsInput(input)).toThrow(message);
   });
@@ -64,7 +101,12 @@ describe('provider settings ipc', () => {
         baseUrl: '',
         model: '',
       }),
-    ).toMatchObject({ activeProvider: 'mock', baseUrl: '', model: '' });
+    ).toMatchObject({
+      activeProvider: 'mock',
+      baseUrl: '',
+      model: '',
+      ...defaultOpenAICompatibleGenerationParams,
+    });
   });
 
   test('returns sanitized settings and forwards validated saves', async () => {
@@ -83,6 +125,9 @@ describe('provider settings ipc', () => {
         baseUrl: ' https://provider.example/v1 ',
         model: ' roleplay-model ',
         apiKey: ' test-key ',
+        temperature: 0.7,
+        maxOutputTokens: 2048,
+        requestTimeoutMs: 60_000,
       }),
     ).resolves.toEqual(settingsView);
     expect(service.saveSettings).toHaveBeenCalledWith({
@@ -91,6 +136,9 @@ describe('provider settings ipc', () => {
       model: 'roleplay-model',
       apiKey: 'test-key',
       clearApiKey: false,
+      temperature: 0.7,
+      maxOutputTokens: 2048,
+      requestTimeoutMs: 60_000,
     });
     expect(JSON.stringify(settingsView)).not.toContain('test-key');
   });

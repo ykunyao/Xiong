@@ -1,4 +1,4 @@
-import type { ChatProvider, ChatProviderMessage } from '@xiong/core';
+import { ChatProviderTimeoutError, type ChatProvider, type ChatProviderMessage } from '@xiong/core';
 import type { LibraryRepository } from '@xiong/db';
 import type { ChatProgressEvent, SendChatMessageInput } from '../shared/chat';
 
@@ -6,6 +6,7 @@ export type ChatServiceErrorCode =
   | 'generation-active'
   | 'conversation-not-found'
   | 'character-not-found'
+  | 'request-timeout'
   | 'empty-response';
 
 export class ChatServiceError extends Error {
@@ -15,6 +16,15 @@ export class ChatServiceError extends Error {
   ) {
     super(message);
     this.name = 'ChatServiceError';
+  }
+}
+
+class UserCancelledGenerationError extends Error {
+  readonly code = 'user-cancelled';
+
+  constructor() {
+    super('The user stopped reply generation');
+    this.name = 'AbortError';
   }
 }
 
@@ -40,7 +50,7 @@ export function createChatService(
         return false;
       }
 
-      controller.abort();
+      controller.abort(new UserCancelledGenerationError());
       return true;
     },
 
@@ -101,7 +111,7 @@ export function createChatService(
           },
           { signal: controller.signal },
         )) {
-          if (controller.signal.aborted) {
+          if (isUserCancellation(controller.signal)) {
             break;
           }
           if (delta.length === 0) {
@@ -112,7 +122,7 @@ export function createChatService(
           emit({ type: 'delta', conversationId: conversation.id, delta });
         }
 
-        if (controller.signal.aborted) {
+        if (isUserCancellation(controller.signal)) {
           emit({ type: 'cancelled', conversationId: conversation.id });
           return;
         }
@@ -132,7 +142,11 @@ export function createChatService(
           message: assistantMessage,
         });
       } catch (error) {
-        if (controller.signal.aborted) {
+        if (error instanceof ChatProviderTimeoutError) {
+          throw new ChatServiceError('request-timeout', 'The model provider request timed out');
+        }
+
+        if (isUserCancellation(controller.signal)) {
           emit({ type: 'cancelled', conversationId: input.conversationId });
           return;
         }
@@ -145,6 +159,10 @@ export function createChatService(
       }
     },
   };
+}
+
+function isUserCancellation(signal: AbortSignal): boolean {
+  return signal.aborted && signal.reason instanceof UserCancelledGenerationError;
 }
 
 function createCharacterSystemPrompt(character: {

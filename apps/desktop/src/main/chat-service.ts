@@ -19,10 +19,7 @@ export class ChatServiceError extends Error {
 }
 
 export interface ChatService {
-  send(
-    input: SendChatMessageInput,
-    emit: (event: ChatProgressEvent) => void,
-  ): Promise<void>;
+  send(input: SendChatMessageInput, emit: (event: ChatProgressEvent) => void): Promise<void>;
 }
 
 export function createChatService(

@@ -46,8 +46,7 @@ export function createLibraryRepository(database: XiongDatabase): LibraryReposit
     listCharacters: () =>
       database.db.select().from(characters).orderBy(asc(characters.createdAt)).all(),
 
-    getCharacter: (id) =>
-      database.db.select().from(characters).where(eq(characters.id, id)).get(),
+    getCharacter: (id) => database.db.select().from(characters).where(eq(characters.id, id)).get(),
 
     createCharacter: (input) => {
       const now = Date.now();

@@ -127,10 +127,7 @@ describe('chat service', () => {
     await streamStarted.promise;
 
     await expect(
-      service.send(
-        { conversationId: conversation.id, content: '第二条' },
-        () => undefined,
-      ),
+      service.send({ conversationId: conversation.id, content: '第二条' }, () => undefined),
     ).rejects.toThrow('A reply is already being generated for this conversation');
     expect(messages).toHaveLength(1);
 

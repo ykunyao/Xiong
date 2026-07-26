@@ -1,11 +1,16 @@
-import type { ChatSendRequest, ChatStreamEvent, SendChatMessageInput } from '../shared/chat';
+import type {
+  CancelChatGenerationInput,
+  ChatSendRequest,
+  ChatStreamEvent,
+  SendChatMessageInput,
+} from '../shared/chat';
 
 type ChatIpcListener = (event: unknown, payload: ChatStreamEvent) => void;
 
 export interface ChatIpcRenderer {
   on(channel: string, listener: ChatIpcListener): void;
   removeListener(channel: string, listener: ChatIpcListener): void;
-  invoke(channel: string, request: ChatSendRequest): Promise<unknown>;
+  invoke(channel: string, request: ChatSendRequest | CancelChatGenerationInput): Promise<unknown>;
 }
 
 export interface ChatClient {
@@ -13,6 +18,7 @@ export interface ChatClient {
     input: SendChatMessageInput,
     onEvent: (event: ChatStreamEvent) => void,
   ): Promise<void>;
+  cancelGeneration(conversationId: string): Promise<boolean>;
 }
 
 export function createChatClient(
@@ -20,6 +26,11 @@ export function createChatClient(
   createRequestId: () => string = () => globalThis.crypto.randomUUID(),
 ): ChatClient {
   return {
+    async cancelGeneration(conversationId) {
+      const result = await ipcRenderer.invoke('chat:cancel-generation', { conversationId });
+      return result === true;
+    },
+
     async sendMessage(input, onEvent) {
       const requestId = createRequestId();
       const listener: ChatIpcListener = (_event, streamEvent) => {
@@ -30,7 +41,11 @@ export function createChatClient(
         try {
           onEvent(streamEvent);
         } finally {
-          if (streamEvent.type === 'complete' || streamEvent.type === 'error') {
+          if (
+            streamEvent.type === 'complete' ||
+            streamEvent.type === 'error' ||
+            streamEvent.type === 'cancelled'
+          ) {
             cleanup();
           }
         }

@@ -6,5 +6,6 @@ export type {
   ChatProviderMessage,
   ChatProviderMessageRole,
   ChatProviderRequest,
+  ChatProviderStreamOptions,
   MockChatProviderOptions,
 } from './chat-provider';

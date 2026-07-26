@@ -44,7 +44,7 @@ export function chatActivityReducer(
     };
   }
 
-  if (event.type === 'complete' || event.type === 'error') {
+  if (event.type === 'complete' || event.type === 'error' || event.type === 'cancelled') {
     return finishConversation(state, event.conversationId);
   }
 

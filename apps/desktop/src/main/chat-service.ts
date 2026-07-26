@@ -20,6 +20,7 @@ export class ChatServiceError extends Error {
 
 export interface ChatService {
   send(input: SendChatMessageInput, emit: (event: ChatProgressEvent) => void): Promise<void>;
+  cancel(conversationId: string): boolean;
 }
 
 export interface ChatProviderResolver {
@@ -30,18 +31,29 @@ export function createChatService(
   repository: LibraryRepository,
   providerResolver: ChatProviderResolver,
 ): ChatService {
-  const activeConversations = new Set<string>();
+  const activeGenerations = new Map<string, AbortController>();
 
   return {
+    cancel(conversationId) {
+      const controller = activeGenerations.get(conversationId);
+      if (!controller || controller.signal.aborted) {
+        return false;
+      }
+
+      controller.abort();
+      return true;
+    },
+
     async send(input, emit) {
-      if (activeConversations.has(input.conversationId)) {
+      if (activeGenerations.has(input.conversationId)) {
         throw new ChatServiceError(
           'generation-active',
           'A reply is already being generated for this conversation',
         );
       }
 
-      activeConversations.add(input.conversationId);
+      const controller = new AbortController();
+      activeGenerations.set(input.conversationId, controller);
 
       try {
         const conversation = repository.getConversation(input.conversationId);
@@ -55,6 +67,7 @@ export function createChatService(
         }
 
         const provider = await providerResolver.resolveChatProvider();
+        controller.signal.throwIfAborted();
 
         const userMessage = repository.addMessage({
           conversationId: conversation.id,
@@ -68,27 +81,40 @@ export function createChatService(
         });
 
         let assistantContent = '';
-        for await (const delta of provider.stream({
-          characterName: character.name,
-          messages: [
-            {
-              role: 'system',
-              content: createCharacterSystemPrompt(character),
-            },
-            ...repository.listMessages(conversation.id).flatMap<ChatProviderMessage>((message) => {
-              if (message.role === 'user' || message.role === 'assistant') {
-                return [{ role: message.role, content: message.content }];
-              }
-              return [];
-            }),
-          ],
-        })) {
+        for await (const delta of provider.stream(
+          {
+            characterName: character.name,
+            messages: [
+              {
+                role: 'system',
+                content: createCharacterSystemPrompt(character),
+              },
+              ...repository
+                .listMessages(conversation.id)
+                .flatMap<ChatProviderMessage>((message) => {
+                  if (message.role === 'user' || message.role === 'assistant') {
+                    return [{ role: message.role, content: message.content }];
+                  }
+                  return [];
+                }),
+            ],
+          },
+          { signal: controller.signal },
+        )) {
+          if (controller.signal.aborted) {
+            break;
+          }
           if (delta.length === 0) {
             continue;
           }
 
           assistantContent += delta;
           emit({ type: 'delta', conversationId: conversation.id, delta });
+        }
+
+        if (controller.signal.aborted) {
+          emit({ type: 'cancelled', conversationId: conversation.id });
+          return;
         }
 
         if (assistantContent.length === 0) {
@@ -105,8 +131,17 @@ export function createChatService(
           conversationId: conversation.id,
           message: assistantMessage,
         });
+      } catch (error) {
+        if (controller.signal.aborted) {
+          emit({ type: 'cancelled', conversationId: input.conversationId });
+          return;
+        }
+
+        throw error;
       } finally {
-        activeConversations.delete(input.conversationId);
+        if (activeGenerations.get(input.conversationId) === controller) {
+          activeGenerations.delete(input.conversationId);
+        }
       }
     },
   };
